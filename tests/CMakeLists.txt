@@ -5,7 +5,9 @@ set(RTOS_UNIT_TEST_SOURCES
     unit/messaging/SubscriptionRegistryTests.cpp
     unit/model/ModelFrameworkTests.cpp
     unit/model/ModelConfigurationTests.cpp
+    unit/platform/FreeRtosAdapterTests.cpp
     unit/simulation/SimulatorCoreTests.cpp
+    unit/simulation/PerformanceMetricsTests.cpp
     integration/ModelProcessTests.cpp
 )
 

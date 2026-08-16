@@ -10,6 +10,10 @@ Subscriptions use move-only RAII handles. Destroying or resetting a
 `SubscriptionHandle` safely unregisters its callback, including callbacks that
 capture a model's `this` pointer.
 
+Messaging queues have configurable fixed depth, maximum payload size, and
+full-queue policy. Queue payload storage is reserved at construction and does
+not allocate while publishing or dispatching.
+
 ## Requirements
 
 - CMake 3.20 or newer
@@ -46,6 +50,7 @@ compatibility wrapper around `./build`.
 ./.build/rtos_sim --help
 ./run --debug
 ./run --frames 100 --frame-rate 50
+./run --frames 1000 --frame-rate 100 --metrics
 ```
 
 The simulator starts one coordinator process and a separate worker PID with its
@@ -66,6 +71,9 @@ worker, leaving the prompt available for `status`, `ports`, `messages`, `stop
 models`, and `stop sim`. Use `run <frames>` for an interactive fixed run, or
 launch with `--frames <count>` for a fixed run that exits automatically. The
 `--frame-rate <hz>` option controls frame pacing and defaults to 100 Hz.
+Use the interactive `metrics` command, or add `--metrics` to a fixed run, to show
+parallel execution time, dispatch latency, queue depth, jitter, deadline misses,
+and worker CPU utilization. See [`docs/concurrency.md`](docs/concurrency.md).
 
 Logging is configured when launching the executable. `./run` prints `ERROR` and
 `FATAL` records by default, `./run --info` and `./run --debug` increase
@@ -131,3 +139,6 @@ port numbers publishing to or subscribing from it.
 
 Concrete project messages are defined in `messages/`. See
 [`docs/ros_messaging.md`](docs/ros_messaging.md) for API semantics and examples.
+See [`docs/bounded_messaging.md`](docs/bounded_messaging.md) for bounded queue
+configuration and [`docs/freertos_adapter.md`](docs/freertos_adapter.md) for the
+optional native FreeRTOS execution target.

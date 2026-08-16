@@ -25,3 +25,18 @@ containing a message name, routing ID, and payload. The coordinator broadcasts
 each frame's completed outbound batch to matching subscriber routes, then asks
 every worker to dispatch. Callback publications remain deferred until the next
 boundary.
+
+Within each frame, coordinator threads issue `operate()` requests to every model
+PID concurrently, join at the routing barrier, then issue dispatch requests
+concurrently. See [`concurrency.md`](concurrency.md) for synchronization, lock
+ordering, ownership, and performance instrumentation details.
+
+`DispatchPort` queue capacity, payload size, and overflow behavior are explicit.
+Incoming and dispatch batches use preallocated inline payload slots rather than
+allocating a shared payload for each publication. See
+[`bounded_messaging.md`](bounded_messaging.md).
+
+The execution layer also provides a portable `FreeRtosAdapter`. Its native
+binding creates static FreeRTOS model tasks plus a dedicated messaging task,
+while models retain the same lifecycle and messaging APIs used by the host
+simulator. See [`freertos_adapter.md`](freertos_adapter.md).

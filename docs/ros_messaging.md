@@ -20,10 +20,16 @@ port.send(rtos::messages::MotorCommand{1500});
 const auto report = port.dispatchAll();
 ```
 
-`send()` owns a copy or moved instance of the message and never invokes callbacks.
+`send()` copies the trivially-copyable payload into queue-owned inline storage
+and never invokes callbacks.
 `dispatchAll()` routes the current batch to every subscriber registered for the
 exact C++ message type. Messages published by a callback remain queued until the
 next call to `dispatchAll()`.
+
+Queue depth, maximum payload size, and full-queue behavior are configured when a
+`DispatchPort` is constructed. Pending messages use preallocated inline payload
+slots, and `send()` reports whether a message was queued, rejected, or replaced
+an older entry. See [`bounded_messaging.md`](bounded_messaging.md).
 
 ## Dispatch Semantics
 
@@ -82,6 +88,11 @@ runs models in separate processes and connects their dispatch ports through an
 IPC transport. Subscription lifetime and bounded embedded storage are planned
 for later milestones. ROS Messaging is an internal name and does not imply
 compatibility with ROS 1 or ROS 2.
+
+Publishing, receiving, diagnostics, subscription changes, and dispatch entry are
+thread-safe. Dispatch moves the current queue into a private batch, so concurrent
+publishers target the following dispatch boundary. Subscriber callbacks run
+without holding the dispatch queue mutex.
 
 ## Diagnostics
 

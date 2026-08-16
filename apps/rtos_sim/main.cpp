@@ -4,6 +4,7 @@
 #include "rtos/model/ModelConfiguration.hpp"
 #include "rtos/model/ModelRunner.hpp"
 #include "rtos/simulation/SimulatorCore.hpp"
+#include "rtos/simulation/PerformanceMetrics.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -14,6 +15,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <future>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
@@ -58,6 +60,7 @@ struct ProcessOptions {
     std::filesystem::path modelConfiguration{RTOS_DEFAULT_MODEL_CONFIG};
     std::chrono::nanoseconds framePeriod{std::chrono::milliseconds{10}};
     std::optional<std::size_t> frameCount;
+    bool showMetrics{};
 };
 
 void printHelp()
@@ -71,6 +74,7 @@ void printHelp()
                  "  --models <file>  Select the models XML configuration\n"
                  "  --frames <count>  Run a fixed number of frames and exit\n"
                  "  --frame-rate <hz> Set the simulation frame rate (default: 100)\n"
+                 "  --metrics        Print metrics after a fixed frame run\n"
                  "  --help           Show this help message\n"
                  "  --version        Show the simulator version\n\n"
                  "Interactive commands:\n"
@@ -83,6 +87,7 @@ void printHelp()
                  "  status           Show every model control status\n"
                  "  ports            Show all ROS Messaging ports\n"
                  "  messages         Show created and sent message traffic\n"
+                 "  metrics          Show parallel execution performance\n"
                  "  models           Show loaded model configuration\n"
                  "  stop sim         Stop execution and terminate all models\n"
                  "  help             Show process options and commands\n"
@@ -106,7 +111,8 @@ public:
           configuration_{std::move(configuration)},
           loggingOptions_{options.logging},
           framePeriod_{options.framePeriod},
-          startupFrameCount_{options.frameCount}
+          startupFrameCount_{options.frameCount},
+          showStartupMetrics_{options.showMetrics}
     {
         logger_.setEnabled(options.logging.enabled);
         for (const auto& model : configuration_.models()) {
@@ -125,6 +131,9 @@ public:
         if (startupFrameCount_.has_value()) {
             startModels();
             runFrames(*startupFrameCount_);
+            if (showStartupMetrics_) {
+                printMetrics();
+            }
             terminateSimulation();
             return 0;
         }
@@ -167,6 +176,8 @@ private:
             command == "messages" || command == "msgs" || command == "show messages"
         ) {
             printMessages();
+        } else if (command == "metrics" || command == "performance") {
+            printMetrics();
         } else if (command == "models" || command == "show models") {
             printConfiguredModels();
         } else if (command == "stop sim" || command == "stop-sim") {
@@ -195,6 +206,7 @@ private:
         }
 
         core_.start();
+        performanceMetrics_.reset();
         launchModelProcesses();
         initialized_ = true;
         launchConfiguredDebuggers();
@@ -288,7 +300,7 @@ private:
             {
                 auto nextFrame = std::chrono::steady_clock::now();
                 while (!stopToken.stop_requested()) {
-                    executeFrame();
+                    executeFrame(nextFrame);
                     nextFrame += framePeriod_;
                     std::this_thread::sleep_until(nextFrame);
                 }
@@ -310,7 +322,7 @@ private:
 
         auto nextFrame = std::chrono::steady_clock::now();
         for (std::size_t offset = 0; offset < count; ++offset) {
-            executeFrame();
+            executeFrame(nextFrame);
             nextFrame += framePeriod_;
             if (offset + 1 < count) {
                 std::this_thread::sleep_until(nextFrame);
@@ -318,14 +330,38 @@ private:
         }
     }
 
-    void executeFrame()
+    void executeFrame(const std::chrono::steady_clock::time_point scheduledStart)
     {
         std::scoped_lock lock{simulationMutex_};
+        const auto frameStarted = std::chrono::steady_clock::now();
+        const auto jitter = frameStarted >= scheduledStart
+            ? frameStarted - scheduledStart
+            : scheduledStart - frameStarted;
         core_.advanceFrame();
         const auto frame = core_.frameCounter().current();
         auto routedMessages = std::exchange(deferredMessages_, {});
+        const auto elapsed = core_.clock().elapsed();
+        std::vector<std::future<rtos::host::ModelProcessReply>> operateFutures;
+        operateFutures.reserve(processes_.size());
         for (auto& process : processes_) {
-            auto reply = process->operate(frame, core_.clock().elapsed());
+            auto* const processPointer = process.get();
+            operateFutures.push_back(std::async(
+                std::launch::async,
+                [processPointer, frame, elapsed]
+                {
+                    return processPointer->operate(frame, elapsed);
+                }
+            ));
+        }
+
+        std::chrono::nanoseconds parallelModelExecutionTime{};
+        std::chrono::nanoseconds workerCpuTime{};
+        for (auto& future : operateFutures) {
+            auto reply = future.get();
+            parallelModelExecutionTime = std::max(
+                parallelModelExecutionTime, reply.executionTime
+            );
+            workerCpuTime += reply.processCpuTime;
             for (auto& outgoing : reply.messages) {
                 auto& counters = traffic_[outgoing.messageName];
                 counters.messageName = outgoing.messageName;
@@ -358,17 +394,83 @@ private:
                 ++dispatch.messagesDispatched;
                 dispatch.callbacksInvoked += subscriberCount;
             }
-            for (auto& process : processes_) {
-                static_cast<void>(process->deliver(routed));
-            }
         }
 
+        std::vector<std::future<void>> deliveryFutures;
+        deliveryFutures.reserve(processes_.size());
         for (auto& process : processes_) {
-            auto reply = process->dispatch();
+            auto* const processPointer = process.get();
+            deliveryFutures.push_back(std::async(
+                std::launch::async,
+                [processPointer, &routedMessages]
+                {
+                    for (const auto& routed : routedMessages) {
+                        static_cast<void>(processPointer->deliver(routed));
+                    }
+                }
+            ));
+        }
+        for (auto& future : deliveryFutures) {
+            future.get();
+        }
+
+        const auto dispatchStarted = std::chrono::steady_clock::now();
+        std::vector<std::future<rtos::host::ModelProcessReply>> dispatchFutures;
+        dispatchFutures.reserve(processes_.size());
+        for (auto& process : processes_) {
+            auto* const processPointer = process.get();
+            dispatchFutures.push_back(std::async(
+                std::launch::async,
+                [processPointer] { return processPointer->dispatch(); }
+            ));
+        }
+
+        std::size_t queueDepth{};
+        std::size_t queueHighWaterMark{};
+        std::chrono::nanoseconds totalDispatchLatency{};
+        std::chrono::nanoseconds maximumDispatchLatency{};
+        std::chrono::nanoseconds callbackExecutionTime{};
+        for (auto& future : dispatchFutures) {
+            auto reply = future.get();
+            queueDepth += reply.dispatch.queueDepthAtStart;
+            queueHighWaterMark = std::max(
+                queueHighWaterMark, reply.dispatch.queueHighWaterMark
+            );
+            totalDispatchLatency += reply.dispatch.totalDispatchLatency;
+            maximumDispatchLatency = std::max(
+                maximumDispatchLatency, reply.dispatch.maximumDispatchLatency
+            );
+            callbackExecutionTime += reply.dispatch.callbackExecutionTime;
             for (auto& deferred : reply.messages) {
                 deferredMessages_.push_back(std::move(deferred));
             }
         }
+        const auto dispatchPhaseTime =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - dispatchStarted
+            );
+
+        const auto frameExecutionTime =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - frameStarted
+            );
+        performanceMetrics_.record(rtos::simulation::FramePerformance{
+            .frame = frame,
+            .workerCount = processes_.size(),
+            .messagesProcessed = dispatch.messagesProcessed(),
+            .queueDepth = queueDepth,
+            .queueHighWaterMark = queueHighWaterMark,
+            .dispatchLatencySamples = queueDepth,
+            .deadlineMissed = frameExecutionTime > framePeriod_,
+            .frameExecutionTime = frameExecutionTime,
+            .jitter = std::chrono::duration_cast<std::chrono::nanoseconds>(jitter),
+            .parallelModelExecutionTime = parallelModelExecutionTime,
+            .workerCpuTime = workerCpuTime,
+            .totalDispatchLatency = totalDispatchLatency,
+            .maximumDispatchLatency = maximumDispatchLatency,
+            .callbackExecutionTime = callbackExecutionTime,
+            .dispatchPhaseTime = dispatchPhaseTime,
+        });
 
         std::ostringstream message;
         message << "frame=" << frame
@@ -506,6 +608,36 @@ private:
                       << std::setw(countWidth) << message.messagesWithoutSubscribers
                       << '\n';
         }
+    }
+
+    void printMetrics() const
+    {
+        std::scoped_lock lock{simulationMutex_};
+        const auto metrics = performanceMetrics_.summary();
+        std::cout << "Parallel Performance Metrics\n"
+                  << "Frames:                    " << metrics.frames << '\n'
+                  << "Workers:                   " << metrics.workers << '\n'
+                  << "Messages/frame:            " << std::fixed << std::setprecision(3)
+                  << metrics.averageMessagesPerFrame << '\n'
+                  << "Frame execution avg/max:   "
+                  << metrics.averageFrameExecutionMilliseconds << " / "
+                  << metrics.maximumFrameExecutionMilliseconds << " ms\n"
+                  << "Model execution avg:       "
+                  << metrics.averageModelExecutionMilliseconds << " ms\n"
+                  << "Dispatch latency avg/max:  "
+                  << metrics.averageDispatchLatencyMilliseconds << " / "
+                  << metrics.maximumDispatchLatencyMilliseconds << " ms\n"
+                  << "Callback execution avg:    "
+                  << metrics.averageCallbackExecutionMilliseconds << " ms\n"
+                  << "Dispatch phase avg:        "
+                  << metrics.averageDispatchPhaseMilliseconds << " ms\n"
+                  << "Queue depth avg:           " << metrics.averageQueueDepth << '\n'
+                  << "Queue high-water mark:     " << metrics.queueHighWaterMark << '\n'
+                  << "Jitter avg/max:            " << metrics.averageJitterMilliseconds
+                  << " / " << metrics.maximumJitterMilliseconds << " ms\n"
+                  << "Deadline misses:           " << metrics.deadlineMisses << '\n'
+                  << "Worker CPU utilization:    " << metrics.cpuUtilizationPercent
+                  << "%\n";
     }
 
     void printConfiguredModels() const
@@ -706,10 +838,12 @@ private:
     std::unordered_map<std::string, rtos::messaging::MessageTraffic> traffic_;
     std::vector<rtos::messaging::TransportMessage> deferredMessages_;
     rtos::simulation::SimulatorCore& core_{rtos::simulation::SimulatorCore::instance()};
+    rtos::simulation::PerformanceMetrics performanceMetrics_;
     mutable std::mutex simulationMutex_;
     bool initialized_{};
     std::chrono::nanoseconds framePeriod_;
     std::optional<std::size_t> startupFrameCount_;
+    bool showStartupMetrics_{};
     std::jthread worker_;
     std::unordered_set<std::string> launchedDebuggers_;
     bool debuggerAttachmentEnabled_{};
@@ -755,6 +889,8 @@ std::optional<ProcessOptions> parseOptions(const int argc, char* argv[])
                 return std::nullopt;
             }
             options.framePeriod = std::chrono::nanoseconds{1'000'000'000 / frameRate};
+        } else if (option == "--metrics") {
+            options.showMetrics = true;
         } else {
             std::cerr << "Unknown option: " << option << "\n"
                       << "Run rtos_sim --help for usage.\n";

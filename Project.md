@@ -994,6 +994,13 @@ Network Thread ────┘
 
 Make publishing thread-safe.
 
+The host coordinator shall issue model `operate()` requests concurrently and
+join them at an explicit barrier before routing. Delivery and dispatch may run
+concurrently across model workers, but message order within one worker and the
+frame dispatch boundary must remain deterministic. Dispatch queues,
+subscriptions, traffic counters, IPC transactions, and callback lifetime state
+shall be synchronized.
+
 Study and document:
 
 ```text
@@ -1019,6 +1026,16 @@ static allocation
 ```
 
 The framework should begin moving away from assumptions that unlimited heap allocation is available.
+
+`DispatchPort` shall accept an immutable `QueueConfiguration` defining queue
+depth, maximum payload size, and one of three full-queue policies: reject newest,
+drop newest, or drop oldest. Publishing shall return a `SendResult`, and queue
+statistics shall expose rejected, dropped, oversize, pending, and high-water
+counts.
+
+The incoming queue and dispatch batch shall reserve their complete capacity at
+construction. Pending payloads shall use aligned inline storage so normal
+publish and dispatch operations do not allocate payload objects.
 
 ### Milestone 9 — FreeRTOS Adapter
 
@@ -1049,9 +1066,23 @@ and
 FreeRTOS
 ```
 
+The portable adapter shall create one periodic task per registered model and a
+separate messaging task. Model periods, priorities, and stack depths shall be
+explicit. Its model registry shall be fixed-size, and the native FreeRTOS kernel
+binding shall use statically allocated task control blocks and stacks through
+`xTaskCreateStatic()`.
+
+The native binding is optional at build time and shall link against an externally
+provided `freertos_kernel` target. Application model source shall contain no
+FreeRTOS APIs.
+
 ### Milestone 10 — Parallel Processing Exercise
 
 Introduce models/tasks executing concurrently across available cores where supported.
+
+The host implementation shall allow the operating system to schedule separate
+model worker PIDs across available cores. The coordinator shall measure parallel
+frame phases rather than execute model IPC requests sequentially.
 
 Measure:
 

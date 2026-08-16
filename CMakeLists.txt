@@ -9,6 +9,9 @@ project(
 
 option(RTOS_BUILD_TESTS "Build the unit tests" OFF)
 option(RTOS_ENABLE_DEBUG_SYMBOLS "Build the host framework with GDB symbols" ON)
+option(RTOS_BUILD_FREERTOS_ADAPTER "Build the native FreeRTOS kernel binding" OFF)
+set(RTOS_FREERTOS_MAX_TASKS 17 CACHE STRING "Static FreeRTOS task slots")
+set(RTOS_FREERTOS_MAX_STACK_DEPTH 2048 CACHE STRING "Stack words per FreeRTOS task")
 
 add_library(rtos_framework
     models/ControlModel/ControlModel.cpp
@@ -20,7 +23,9 @@ add_library(rtos_framework
     src/messaging/SubscriptionRegistry.cpp
     src/model/ModelRunner.cpp
     src/model/ModelConfiguration.cpp
+    src/platform/freertos/FreeRtosAdapter.cpp
     src/simulation/SimulationClock.cpp
+    src/simulation/PerformanceMetrics.cpp
     src/simulation/SimulatorCore.cpp
 )
 add_library(rtos::framework ALIAS rtos_framework)
@@ -40,6 +45,26 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     endif()
 elseif(MSVC)
     target_compile_options(rtos_framework PRIVATE /W4 /permissive-)
+endif()
+
+if(RTOS_BUILD_FREERTOS_ADAPTER)
+    if(NOT TARGET freertos_kernel)
+        message(FATAL_ERROR "RTOS_BUILD_FREERTOS_ADAPTER requires a freertos_kernel target")
+    endif()
+    add_library(rtos_freertos_adapter platforms/freertos/NativeFreeRtosKernel.cpp)
+    add_library(rtos::freertos_adapter ALIAS rtos_freertos_adapter)
+    target_compile_features(rtos_freertos_adapter PUBLIC cxx_std_20)
+    target_include_directories(
+        rtos_freertos_adapter
+        PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    )
+    target_compile_definitions(
+        rtos_freertos_adapter
+        PUBLIC
+            FreeRtosAdapterMaximumTasks=${RTOS_FREERTOS_MAX_TASKS}
+            FreeRtosAdapterMaximumStackDepth=${RTOS_FREERTOS_MAX_STACK_DEPTH}
+    )
+    target_link_libraries(rtos_freertos_adapter PUBLIC rtos::framework freertos_kernel)
 endif()
 
 add_library(rtos_host_process apps/rtos_sim/ModelProcess.cpp)
