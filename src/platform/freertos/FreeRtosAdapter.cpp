@@ -56,29 +56,41 @@ bool FreeRtosAdapter::start()
         return false;
     }
     running_.store(true, std::memory_order_release);
+    std::array<TaskHandle, maximumModels + 1> createdTasks{};
+    std::size_t createdTaskCount{};
+
+    const auto rollback = [&] {
+        while (createdTaskCount > 0) {
+            kernel_.deleteTask(createdTasks[--createdTaskCount]);
+        }
+        stop();
+    };
 
     for (std::size_t index = 0; index < modelCount_; ++index) {
         auto& context = models_[index];
-        if (!kernel_.createTask(
-                &FreeRtosAdapter::modelTaskEntry,
-                context.name.data(),
-                context.configuration.stackDepth,
-                &context,
-                context.configuration.priority
-            )) {
-            stop();
+        const auto handle = kernel_.createTask(
+            &FreeRtosAdapter::modelTaskEntry,
+            context.name.data(),
+            context.configuration.stackDepth,
+            &context,
+            context.configuration.priority
+        );
+        if (handle == nullptr) {
+            rollback();
             return false;
         }
+        createdTasks[createdTaskCount++] = handle;
     }
 
-    if (!kernel_.createTask(
-            &FreeRtosAdapter::messagingTaskEntry,
-            "ROSDispatch",
-            messagingTask_.stackDepth,
-            this,
-            messagingTask_.priority
-        )) {
-        stop();
+    const auto messagingHandle = kernel_.createTask(
+        &FreeRtosAdapter::messagingTaskEntry,
+        "ROSDispatch",
+        messagingTask_.stackDepth,
+        this,
+        messagingTask_.priority
+    );
+    if (messagingHandle == nullptr) {
+        rollback();
         return false;
     }
     return true;

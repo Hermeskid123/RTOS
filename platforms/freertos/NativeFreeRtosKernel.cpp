@@ -10,7 +10,9 @@
 
 namespace rtos::platform::freertos {
 
-bool NativeFreeRtosKernel::createTask(
+static_assert(configMAX_TASK_NAME_LEN > 0);
+
+TaskHandle NativeFreeRtosKernel::createTask(
     const TaskEntry entry,
     const std::string_view name,
     const std::uint32_t stackDepth,
@@ -23,13 +25,16 @@ bool NativeFreeRtosKernel::createTask(
         storage == tasks_.end() || stackDepth == 0 || stackDepth > maximumStackDepth
         || priority > std::numeric_limits<UBaseType_t>::max()
     ) {
-        return false;
+        return nullptr;
     }
 
     storage->occupied = true;
+    std::array<char, configMAX_TASK_NAME_LEN> taskName{};
+    const auto taskNameLength = std::min(name.size(), taskName.size() - 1);
+    std::copy_n(name.begin(), taskNameLength, taskName.begin());
     const auto handle = xTaskCreateStatic(
         entry,
-        name.data(),
+        taskName.data(),
         static_cast<configSTACK_DEPTH_TYPE>(stackDepth),
         context,
         static_cast<UBaseType_t>(priority),
@@ -38,9 +43,14 @@ bool NativeFreeRtosKernel::createTask(
     );
     if (handle == nullptr) {
         storage->occupied = false;
-        return false;
+        return nullptr;
     }
-    return true;
+    return handle;
+}
+
+void NativeFreeRtosKernel::deleteTask(const TaskHandle handle) noexcept
+{
+    vTaskDelete(static_cast<TaskHandle_t>(handle));
 }
 
 Tick NativeFreeRtosKernel::tickCount() const noexcept

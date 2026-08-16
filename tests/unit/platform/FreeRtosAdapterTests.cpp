@@ -11,6 +11,7 @@
 #include "rtos/platform/freertos/FreeRtosAdapter.hpp"
 
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -26,9 +27,10 @@ public:
         std::uint32_t stackDepth;
         void* context;
         std::uint32_t priority;
+        bool deleted{};
     };
 
-    bool createTask(
+    rtos::platform::freertos::TaskHandle createTask(
         const rtos::platform::freertos::TaskEntry entry,
         const std::string_view name,
         const std::uint32_t stackDepth,
@@ -36,8 +38,17 @@ public:
         const std::uint32_t priority
     ) override
     {
+        if (tasks.size() == failTaskCreationAt) {
+            return nullptr;
+        }
         tasks.push_back(Task{entry, std::string{name}, stackDepth, context, priority});
-        return allowTaskCreation;
+        return &tasks.back();
+    }
+
+    void deleteTask(const rtos::platform::freertos::TaskHandle handle) noexcept override
+    {
+        static_cast<Task*>(handle)->deleted = true;
+        ++tasksDeletedByHandle;
     }
 
     rtos::platform::freertos::Tick tickCount() const noexcept override
@@ -73,11 +84,12 @@ public:
         test::fail("task exists", __FILE__, __LINE__);
     }
 
-    std::vector<Task> tasks;
+    std::deque<Task> tasks;
     std::function<void()> onDelay;
     mutable rtos::platform::freertos::Tick currentTick{};
     std::size_t tasksDeleted{};
-    bool allowTaskCreation{true};
+    std::size_t tasksDeletedByHandle{};
+    std::size_t failTaskCreationAt{static_cast<std::size_t>(-1)};
 };
 
 class ProbeModel final : public rtos::model::BaseModel {
@@ -188,4 +200,24 @@ TEST_CASE("FreeRTOS messaging task dispatches the bounded port")
     REQUIRE(received == 1);
     REQUIRE(port.pendingMessageCount() == 0);
     REQUIRE(kernel.tasksDeleted == 1);
+}
+
+TEST_CASE("FreeRTOS adapter rolls back tasks when startup fails")
+{
+    FakeKernel kernel;
+    kernel.failTaskCreationAt = 2;
+    rtos::messaging::DispatchPort port;
+    ProbeModel first;
+    ProbeModel second;
+    rtos::platform::freertos::FreeRtosAdapter adapter{kernel, port};
+    REQUIRE(adapter.addModel("First", first));
+    REQUIRE(adapter.addModel("Second", second));
+
+    REQUIRE(!adapter.start());
+
+    REQUIRE(!adapter.running());
+    REQUIRE(kernel.tasks.size() == 2);
+    REQUIRE(kernel.tasksDeletedByHandle == 2);
+    REQUIRE(kernel.tasks[0].deleted);
+    REQUIRE(kernel.tasks[1].deleted);
 }

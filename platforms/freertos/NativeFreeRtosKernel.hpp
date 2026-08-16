@@ -20,13 +20,14 @@ public:
     static constexpr std::size_t maximumTasks{FreeRtosAdapterMaximumTasks};
     static constexpr std::size_t maximumStackDepth{FreeRtosAdapterMaximumStackDepth};
 
-    [[nodiscard]] bool createTask(
+    [[nodiscard]] TaskHandle createTask(
         TaskEntry entry,
         std::string_view name,
         std::uint32_t stackDepth,
         void* context,
         std::uint32_t priority
     ) override;
+    void deleteTask(TaskHandle handle) noexcept override;
     [[nodiscard]] Tick tickCount() const noexcept override;
     void delayUntil(Tick& previousWakeTime, Tick period) override;
     void deleteCurrentTask() noexcept override;
