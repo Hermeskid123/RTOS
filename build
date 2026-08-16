@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+build_dir="${BUILD_DIR:-${project_root}/.build}"
+build_type="${BUILD_TYPE:-Debug}"
+action="build"
+jobs=""
+cmake_arguments=()
+
+while (($# > 0)); do
+    case "$1" in
+        clean|clobber)
+            action="$1"
+            shift
+            ;;
+        -j)
+            if (($# < 2)); then
+                echo "build: -j requires a job count" >&2
+                exit 2
+            fi
+            jobs="$2"
+            shift 2
+            ;;
+        -j[0-9]*)
+            jobs="${1#-j}"
+            shift
+            ;;
+        *)
+            cmake_arguments+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [[ -n "${jobs}" && ! "${jobs}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "build: job count must be a positive integer" >&2
+    exit 2
+fi
+
+case "${action}" in
+    clean)
+        if [[ -f "${build_dir}/CMakeCache.txt" ]]; then
+            cmake --build "${build_dir}" --target clean
+        else
+            echo "Nothing to clean: ${build_dir} is not configured."
+        fi
+        ;;
+    clobber)
+        rm -rf -- "${build_dir}"
+        echo "Removed ${build_dir}."
+        ;;
+    build)
+        cmake \
+            -S "${project_root}" \
+            -B "${build_dir}" \
+            -DCMAKE_BUILD_TYPE="${build_type}" \
+            -DRTOS_BUILD_TESTS=ON \
+            "${cmake_arguments[@]}"
+
+        build_arguments=(--parallel)
+        if [[ -n "${jobs}" ]]; then
+            build_arguments+=("${jobs}")
+        fi
+
+        cmake --build "${build_dir}" "${build_arguments[@]}"
+        ctest --test-dir "${build_dir}" --output-on-failure
+        ;;
+esac
