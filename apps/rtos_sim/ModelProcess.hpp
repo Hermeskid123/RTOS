@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the host model worker process interface.
+ */
+
 #pragma once
 
 #include "rtos/logging/Logger.hpp"
@@ -9,6 +14,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -19,6 +25,8 @@ struct ModelProcessReply {
     model::ControlStatus status{model::ControlStatus::stopped};
     messaging::DispatchReport dispatch;
     std::vector<messaging::TransportMessage> messages;
+    std::chrono::nanoseconds executionTime{};
+    std::chrono::nanoseconds processCpuTime{};
 };
 
 class ModelProcess final {
@@ -67,6 +75,7 @@ private:
     int responseFd_{-1};
     model::ControlStatus status_{model::ControlStatus::stopped};
     bool terminated_{};
+    std::mutex requestMutex_;
     std::vector<messaging::PortTopology> topology_;
 };
 

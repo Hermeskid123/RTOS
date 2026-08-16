@@ -1,5 +1,7 @@
 # C++ RTOS Model Framework
 
+**Current release:** 1.0.0 — see [`Release.md`](Release.md).
+
 A host-testable C++20 foundation for exploring RTOS models, scheduling, and the
 project's ROS Messaging publish/subscribe architecture. The framework includes
 the model lifecycle, status-reporting runner, frame-based host simulator, shared
@@ -9,6 +11,10 @@ routing.
 Subscriptions use move-only RAII handles. Destroying or resetting a
 `SubscriptionHandle` safely unregisters its callback, including callbacks that
 capture a model's `this` pointer.
+
+Messaging queues have configurable fixed depth, maximum payload size, and
+full-queue policy. Queue payload storage is reserved at construction and does
+not allocate while publishing or dispatching.
 
 ## Requirements
 
@@ -39,6 +45,13 @@ Set `BUILD_DIR` or `BUILD_TYPE` to override their defaults. Additional arguments
 are forwarded to the CMake configure command. `scripts/build.sh` remains as a
 compatibility wrapper around `./build`.
 
+Generate API documentation when Doxygen is installed:
+
+```bash
+cmake -S . -B .build-docs -DRTOS_BUILD_DOCUMENTATION=ON
+cmake --build .build-docs --target rtos_docs
+```
+
 ## Run
 
 ```bash
@@ -46,6 +59,7 @@ compatibility wrapper around `./build`.
 ./.build/rtos_sim --help
 ./run --debug
 ./run --frames 100 --frame-rate 50
+./run --frames 1000 --frame-rate 100 --metrics
 ```
 
 The simulator starts one coordinator process and a separate worker PID with its
@@ -53,9 +67,14 @@ own IPC dispatch port for every enabled model. The interactive shell supports:
 
 ```text
 start
+start sim
+start models
+run [frames]
 status
 ports
 messages
+metrics
+models
 stop models
 stop sim
 quit
@@ -66,6 +85,9 @@ worker, leaving the prompt available for `status`, `ports`, `messages`, `stop
 models`, and `stop sim`. Use `run <frames>` for an interactive fixed run, or
 launch with `--frames <count>` for a fixed run that exits automatically. The
 `--frame-rate <hz>` option controls frame pacing and defaults to 100 Hz.
+Use the interactive `metrics` command, or add `--metrics` to a fixed run, to show
+parallel execution time, dispatch latency, queue depth, jitter, deadline misses,
+and worker CPU utilization. See [`docs/concurrency.md`](docs/concurrency.md).
 
 Logging is configured when launching the executable. `./run` prints `ERROR` and
 `FATAL` records by default, `./run --info` and `./run --debug` increase
@@ -131,3 +153,15 @@ port numbers publishing to or subscribing from it.
 
 Concrete project messages are defined in `messages/`. See
 [`docs/ros_messaging.md`](docs/ros_messaging.md) for API semantics and examples.
+See [`docs/bounded_messaging.md`](docs/bounded_messaging.md) for bounded queue
+configuration and [`docs/freertos_adapter.md`](docs/freertos_adapter.md) for the
+optional native FreeRTOS execution target.
+
+## Documentation
+
+- [`Project.md`](Project.md) — active product and architecture specification
+- [`Release.md`](Release.md) — completed 1.0.0 milestones and acceptance evidence
+- [`docs/architecture.md`](docs/architecture.md) — subsystem relationships
+- [`docs/model_specification.md`](docs/model_specification.md) — model lifecycle
+- [`docs/ros_messaging.md`](docs/ros_messaging.md) — messaging API and routing
+- [`docs/concurrency.md`](docs/concurrency.md) — synchronization and metrics

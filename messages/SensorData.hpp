@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the SensorData project message payload.
+ */
+
 #pragma once
 
 #include <cstdint>

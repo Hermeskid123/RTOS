@@ -1,10 +1,18 @@
+/**
+ * @file
+ * @brief Defines SubscriptionRegistryTests coverage for the RTOS framework test suite.
+ */
+
 #include "TestFramework.hpp"
 
 #include "messages/MotorCommand.hpp"
 #include "messages/SensorData.hpp"
 #include "rtos/messaging/SubscriptionRegistry.hpp"
 
+#include <atomic>
 #include <type_traits>
+#include <thread>
+#include <vector>
 
 namespace {
 
@@ -54,4 +62,32 @@ TEST_CASE("subscription handles remain safe after registry destruction")
     REQUIRE(!subscription.active());
     subscription.reset();
     REQUIRE(!subscription.active());
+}
+
+TEST_CASE("subscription registration and removal are thread safe")
+{
+    rtos::messaging::SubscriptionRegistry registry;
+    std::atomic<bool> everyHandleActive{true};
+    std::vector<std::jthread> workers;
+    for (int worker = 0; worker < 8; ++worker) {
+        workers.emplace_back(
+            [&registry, &everyHandleActive]
+            {
+                for (int iteration = 0; iteration < 200; ++iteration) {
+                    auto subscription = registry.add<MotorCommand>(
+                        [](const MotorCommand&) {}
+                    );
+                    if (!subscription.active()) {
+                        everyHandleActive.store(false, std::memory_order_relaxed);
+                    }
+                }
+            }
+        );
+    }
+    for (auto& worker : workers) {
+        worker.join();
+    }
+
+    REQUIRE(everyHandleActive.load(std::memory_order_relaxed));
+    REQUIRE(registry.count<MotorCommand>() == 0);
 }

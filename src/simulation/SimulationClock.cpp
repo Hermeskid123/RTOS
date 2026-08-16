@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the SimulationClock framework API.
+ */
+
 #include "rtos/simulation/SimulationClock.hpp"
 
 namespace rtos::simulation {

@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public BaseModel framework API.
+ */
+
 #pragma once
 
 #include "rtos/model/ControlStatus.hpp"

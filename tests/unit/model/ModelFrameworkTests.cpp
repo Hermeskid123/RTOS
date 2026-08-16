@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Defines ModelFrameworkTests coverage for the RTOS framework test suite.
+ */
+
 #include "TestFramework.hpp"
 
 #include "messages/MotorStatus.hpp"

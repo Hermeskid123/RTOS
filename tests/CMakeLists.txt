@@ -1,3 +1,6 @@
+# @file tests/CMakeLists.txt
+# @brief Registers every repository-local unit and integration test with CTest.
+
 set(RTOS_UNIT_TEST_SOURCES
     unit/logging/LoggerTests.cpp
     unit/messaging/DispatchPortTests.cpp
@@ -5,7 +8,9 @@ set(RTOS_UNIT_TEST_SOURCES
     unit/messaging/SubscriptionRegistryTests.cpp
     unit/model/ModelFrameworkTests.cpp
     unit/model/ModelConfigurationTests.cpp
+    unit/platform/FreeRtosAdapterTests.cpp
     unit/simulation/SimulatorCoreTests.cpp
+    unit/simulation/PerformanceMetricsTests.cpp
     integration/ModelProcessTests.cpp
 )
 

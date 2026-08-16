@@ -1,7 +1,13 @@
+/**
+ * @file
+ * @brief Declares the public Transport framework API.
+ */
+
 #pragma once
 
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -30,6 +36,7 @@ struct TransportMessage {
     RoutingId routingId{};
     std::string messageName;
     std::vector<std::byte> payload;
+    std::chrono::steady_clock::time_point queuedAt{};
 };
 
 class MessageTransport {

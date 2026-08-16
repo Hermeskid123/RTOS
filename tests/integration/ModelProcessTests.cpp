@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Defines ModelProcessTests coverage for the RTOS framework test suite.
+ */
+
 #include "TestFramework.hpp"
 
 #include "apps/rtos_sim/ModelProcess.hpp"
@@ -34,12 +39,23 @@ TEST_CASE("models run in distinct processes and route messages over IPC")
 
     const auto sensorFrame = sensor->operate(1, std::chrono::milliseconds{10});
     REQUIRE(sensorFrame.messages.size() == 1);
+    REQUIRE(sensorFrame.executionTime >= std::chrono::nanoseconds::zero());
+    REQUIRE(
+        sensorFrame.messages[0].queuedAt
+        != std::chrono::steady_clock::time_point{}
+    );
     REQUIRE(
         sensorFrame.messages[0].routingId
         == rtos::messages::SensorData::defaultRoutingId
     );
     static_cast<void>(control->deliver(sensorFrame.messages[0]));
-    static_cast<void>(control->dispatch());
+    const auto dispatch = control->dispatch();
+    REQUIRE(dispatch.dispatch.queueDepthAtStart == 1);
+    REQUIRE(dispatch.dispatch.queueHighWaterMark >= 1);
+    REQUIRE(
+        dispatch.dispatch.totalDispatchLatency
+        >= std::chrono::nanoseconds::zero()
+    );
 
     const auto controlFrame = control->operate(2, std::chrono::milliseconds{20});
     REQUIRE(controlFrame.messages.size() == 1);

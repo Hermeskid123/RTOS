@@ -1,34 +1,94 @@
+/**
+ * @file
+ * @brief Implements the SubscriptionHandle framework API.
+ */
+
 #include "rtos/messaging/SubscriptionHandle.hpp"
 
 #include <algorithm>
 #include <utility>
 
 namespace rtos::messaging {
+namespace {
+
+thread_local detail::SubscriptionSlot* executingSlot{};
+
+}  // namespace
+
+bool detail::SubscriptionSlot::invoke(const void* const payload)
+{
+    {
+        std::scoped_lock lock{executionMutex};
+        if (!active.load(std::memory_order_acquire)) {
+            return false;
+        }
+        ++callbacksInFlight;
+    }
+
+    auto* const previousSlot = executingSlot;
+    executingSlot = this;
+    try {
+        callback(payload);
+    } catch (...) {
+        executingSlot = previousSlot;
+        {
+            std::scoped_lock lock{executionMutex};
+            --callbacksInFlight;
+        }
+        executionComplete.notify_all();
+        throw;
+    }
+    executingSlot = previousSlot;
+    {
+        std::scoped_lock lock{executionMutex};
+        --callbacksInFlight;
+    }
+    executionComplete.notify_all();
+    return true;
+}
+
+void detail::SubscriptionSlot::deactivateAndWait() noexcept
+{
+    active.store(false, std::memory_order_release);
+    if (executingSlot == this) {
+        return;
+    }
+    std::unique_lock lock{executionMutex};
+    executionComplete.wait(lock, [this] { return callbacksInFlight == 0; });
+}
 
 void detail::SubscriptionState::remove(
     const std::type_index type,
     const std::size_t id
 ) noexcept
 {
-    const auto subscribersForType = subscribers.find(type);
-    if (subscribersForType == subscribers.end()) {
-        return;
-    }
-
-    auto& slots = subscribersForType->second;
-    const auto slot = std::ranges::find_if(
-        slots,
-        [id](const std::shared_ptr<SubscriptionSlot>& candidate)
-        {
-            return candidate->id == id;
+    std::shared_ptr<SubscriptionSlot> removedSlot;
+    {
+        std::scoped_lock lock{mutex};
+        const auto subscribersForType = subscribers.find(type);
+        if (subscribersForType == subscribers.end()) {
+            return;
         }
-    );
-    if (slot != slots.end()) {
-        (*slot)->active = false;
-        slots.erase(slot);
+
+        auto& slots = subscribersForType->second;
+        const auto slot = std::ranges::find_if(
+            slots,
+            [id](const std::shared_ptr<SubscriptionSlot>& candidate)
+            {
+                return candidate->id == id;
+            }
+        );
+        if (slot != slots.end()) {
+            removedSlot = *slot;
+            removedSlot->active.store(false, std::memory_order_release);
+            slots.erase(slot);
+        }
+        if (slots.empty()) {
+            subscribers.erase(subscribersForType);
+        }
     }
-    if (slots.empty()) {
-        subscribers.erase(subscribersForType);
+    if (removedSlot != nullptr) {
+        removedSlot->deactivateAndWait();
     }
 }
 

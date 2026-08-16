@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the MotorModel example application model.
+ */
+
 #include "models/MotorModel/MotorModel.hpp"
 
 #include "messages/MotorCommand.hpp"

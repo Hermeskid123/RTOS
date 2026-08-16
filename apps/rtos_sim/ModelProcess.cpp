@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements model worker processes and IPC serialization.
+ */
+
 #include "apps/rtos_sim/ModelProcess.hpp"
 
 #include "models/ControlModel/ControlModel.hpp"
@@ -12,8 +17,10 @@
 
 #include <cerrno>
 #include <csignal>
+#include <ctime>
 #include <cstring>
 #include <iostream>
+#include <mutex>
 #include <stdexcept>
 #include <utility>
 
@@ -54,12 +61,21 @@ struct ResponseHeader {
     std::uint64_t messagesDispatched{};
     std::uint64_t callbacksInvoked{};
     std::uint64_t messagesWithoutSubscribers{};
+    std::uint64_t queueDepthAtStart{};
+    std::uint64_t queueHighWaterMark{};
+    std::int64_t totalDispatchLatencyNanoseconds{};
+    std::int64_t maximumDispatchLatencyNanoseconds{};
+    std::int64_t callbackExecutionNanoseconds{};
+    std::int64_t dispatchNanoseconds{};
+    std::int64_t executionNanoseconds{};
+    std::int64_t processCpuNanoseconds{};
 };
 
 struct MessageHeader {
     messaging::RoutingId routingId{};
     std::uint32_t nameSize{};
     std::uint32_t payloadSize{};
+    std::int64_t queuedAtNanoseconds{};
 };
 
 void writeExact(const int fd, const void* data, std::size_t size)
@@ -100,6 +116,9 @@ void writeMessage(const int fd, const messaging::TransportMessage& message)
         message.routingId,
         static_cast<std::uint32_t>(message.messageName.size()),
         static_cast<std::uint32_t>(message.payload.size()),
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            message.queuedAt.time_since_epoch()
+        ).count(),
     };
     writeExact(fd, &header, sizeof(header));
     writeExact(fd, message.messageName.data(), message.messageName.size());
@@ -112,6 +131,9 @@ messaging::TransportMessage readMessage(const int fd, const MessageHeader& heade
     message.routingId = header.routingId;
     message.messageName.resize(header.nameSize);
     message.payload.resize(header.payloadSize);
+    message.queuedAt = std::chrono::steady_clock::time_point{
+        std::chrono::nanoseconds{header.queuedAtNanoseconds}
+    };
     readExact(fd, message.messageName.data(), message.messageName.size());
     readExact(fd, message.payload.data(), message.payload.size());
     return message;
@@ -121,16 +143,19 @@ class BufferedTransport final : public messaging::MessageTransport {
 public:
     void send(messaging::TransportMessage message) override
     {
+        std::scoped_lock lock{mutex_};
         messages_.push_back(std::move(message));
     }
 
     std::vector<messaging::TransportMessage> take()
     {
+        std::scoped_lock lock{mutex_};
         return std::exchange(messages_, {});
     }
 
 private:
     std::vector<messaging::TransportMessage> messages_;
+    std::mutex mutex_;
 };
 
 std::unique_ptr<model::BaseModel> createModel(
@@ -182,12 +207,19 @@ std::unique_ptr<model::BaseModel> createModel(
         if (command == Command::deliver) {
             delivered = readMessage(
                 commandFd,
-                MessageHeader{request.routingId, request.nameSize, request.payloadSize}
+                MessageHeader{
+                    request.routingId,
+                    request.nameSize,
+                    request.payloadSize,
+                    request.elapsedNanoseconds
+                }
             );
         }
 
         model::ControlStatus status = model->status();
         messaging::DispatchReport dispatch;
+        std::chrono::nanoseconds executionTime{};
+        std::chrono::nanoseconds processCpuTime{};
         switch (command) {
         case Command::initialize:
             core.start();
@@ -207,7 +239,20 @@ std::unique_ptr<model::BaseModel> createModel(
             if (auto* sensor = dynamic_cast<models::SensorModel*>(model.get())) {
                 sensor->setSensorValue(static_cast<double>(request.frame));
             }
-            status = model->operate();
+            {
+                const auto startedAt = std::chrono::steady_clock::now();
+                const auto cpuStartedAt = std::clock();
+                status = model->operate();
+                executionTime = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - startedAt
+                );
+                processCpuTime = std::chrono::nanoseconds{
+                    static_cast<std::int64_t>(
+                        static_cast<long double>(std::clock() - cpuStartedAt)
+                        * 1'000'000'000.0L / CLOCKS_PER_SEC
+                    )
+                };
+            }
             break;
         case Command::deliver:
             static_cast<void>(port.receive(delivered));
@@ -230,6 +275,14 @@ std::unique_ptr<model::BaseModel> createModel(
             dispatch.messagesDispatched,
             dispatch.callbacksInvoked,
             dispatch.messagesWithoutSubscribers,
+            dispatch.queueDepthAtStart,
+            dispatch.queueHighWaterMark,
+            dispatch.totalDispatchLatency.count(),
+            dispatch.maximumDispatchLatency.count(),
+            dispatch.callbackExecutionTime.count(),
+            dispatch.dispatchDuration.count(),
+            executionTime.count(),
+            processCpuTime.count(),
         };
         writeExact(responseFd, &response, sizeof(response));
         for (const auto& message : messages) {
@@ -278,6 +331,8 @@ std::unique_ptr<ModelProcess> ModelProcess::launch(
     const bool debugEnabled
 )
 {
+    std::cout.flush();
+    std::cerr.flush();
     int commands[2]{};
     int responses[2]{};
     if (::pipe(commands) != 0 || ::pipe(responses) != 0) {
@@ -368,10 +423,15 @@ ModelProcessReply ModelProcess::request(
     const messaging::TransportMessage* const message
 )
 {
+    std::scoped_lock lock{requestMutex_};
     const CommandHeader request{
         command,
         frame,
-        std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count(),
+        message == nullptr
+            ? std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count()
+            : std::chrono::duration_cast<std::chrono::nanoseconds>(
+                  message->queuedAt.time_since_epoch()
+              ).count(),
         message == nullptr ? 0 : message->routingId,
         message == nullptr ? 0 : static_cast<std::uint32_t>(message->messageName.size()),
         message == nullptr ? 0 : static_cast<std::uint32_t>(message->payload.size()),
@@ -389,6 +449,18 @@ ModelProcessReply ModelProcess::request(
     reply.dispatch.messagesDispatched = response.messagesDispatched;
     reply.dispatch.callbacksInvoked = response.callbacksInvoked;
     reply.dispatch.messagesWithoutSubscribers = response.messagesWithoutSubscribers;
+    reply.dispatch.queueDepthAtStart = response.queueDepthAtStart;
+    reply.dispatch.queueHighWaterMark = response.queueHighWaterMark;
+    reply.dispatch.totalDispatchLatency =
+        std::chrono::nanoseconds{response.totalDispatchLatencyNanoseconds};
+    reply.dispatch.maximumDispatchLatency =
+        std::chrono::nanoseconds{response.maximumDispatchLatencyNanoseconds};
+    reply.dispatch.callbackExecutionTime =
+        std::chrono::nanoseconds{response.callbackExecutionNanoseconds};
+    reply.dispatch.dispatchDuration =
+        std::chrono::nanoseconds{response.dispatchNanoseconds};
+    reply.executionTime = std::chrono::nanoseconds{response.executionNanoseconds};
+    reply.processCpuTime = std::chrono::nanoseconds{response.processCpuNanoseconds};
     reply.messages.reserve(response.messageCount);
     for (std::uint32_t index = 0; index < response.messageCount; ++index) {
         MessageHeader header{};

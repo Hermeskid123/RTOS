@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public FrameCounter framework API.
+ */
+
 #pragma once
 
 #include <atomic>

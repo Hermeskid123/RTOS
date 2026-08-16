@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Defines ModelConfigurationTests coverage for the RTOS framework test suite.
+ */
+
 #include "TestFramework.hpp"
 
 #include "rtos/model/ModelConfiguration.hpp"

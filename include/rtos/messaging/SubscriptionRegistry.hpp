@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public SubscriptionRegistry framework API.
+ */
+
 #pragma once
 
 #include "rtos/messaging/SubscriptionHandle.hpp"
@@ -33,15 +38,13 @@ public:
             std::forward<Callback>(callback)
         };
         const auto type = std::type_index{typeid(SubscribedMessage)};
+        std::scoped_lock lock{state_->mutex};
         const auto id = state_->nextId++;
         state_->subscribers[type].push_back(std::make_shared<detail::SubscriptionSlot>(
-            detail::SubscriptionSlot{
-                id,
-                true,
-                [callback = std::move(typedCallback)](const void* payload)
-                {
-                    callback(*static_cast<const SubscribedMessage*>(payload));
-                },
+            id,
+            [callback = std::move(typedCallback)](const void* payload)
+            {
+                callback(*static_cast<const SubscribedMessage*>(payload));
             }
         ));
         return SubscriptionHandle{state_, type, id};
@@ -50,6 +53,7 @@ public:
     template<typename Message>
     [[nodiscard]] std::size_t count() const
     {
+        std::scoped_lock lock{state_->mutex};
         const auto subscribers = state_->subscribers.find(
             typeid(std::remove_cvref_t<Message>)
         );

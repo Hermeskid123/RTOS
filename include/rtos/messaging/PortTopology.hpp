@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public PortTopology framework API.
+ */
+
 #pragma once
 
 #include "rtos/messaging/Transport.hpp"

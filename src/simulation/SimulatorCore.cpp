@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the SimulatorCore framework API.
+ */
+
 #include "rtos/simulation/SimulatorCore.hpp"
 
 namespace rtos::simulation {

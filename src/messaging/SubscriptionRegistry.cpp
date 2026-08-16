@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the SubscriptionRegistry framework API.
+ */
+
 #include "rtos/messaging/SubscriptionRegistry.hpp"
 
 namespace rtos::messaging {
@@ -9,6 +14,7 @@ SubscriptionRegistry::SubscriptionRegistry()
 
 std::size_t SubscriptionRegistry::count(const std::type_index type) const
 {
+    std::scoped_lock lock{state_->mutex};
     const auto subscribers = state_->subscribers.find(type);
     return subscribers == state_->subscribers.end() ? 0 : subscribers->second.size();
 }
@@ -18,16 +24,18 @@ std::size_t SubscriptionRegistry::dispatch(
     const void* const payload
 ) const
 {
-    const auto subscribers = state_->subscribers.find(type);
-    if (subscribers == state_->subscribers.end()) {
-        return 0;
+    std::vector<std::shared_ptr<detail::SubscriptionSlot>> dispatchSubscribers;
+    {
+        std::scoped_lock lock{state_->mutex};
+        const auto subscribers = state_->subscribers.find(type);
+        if (subscribers == state_->subscribers.end()) {
+            return 0;
+        }
+        dispatchSubscribers = subscribers->second;
     }
-
-    const auto dispatchSubscribers = subscribers->second;
     std::size_t callbacksInvoked{};
     for (const auto& slot : dispatchSubscribers) {
-        if (slot->active) {
-            slot->callback(payload);
+        if (slot->invoke(payload)) {
             ++callbacksInvoked;
         }
     }

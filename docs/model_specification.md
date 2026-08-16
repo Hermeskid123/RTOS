@@ -1,5 +1,7 @@
 # Model Specification
 
+This lifecycle and dependency contract is stable for release 1.0.0.
+
 Models are independently executable application components with
 framework-managed lifecycle functions. Every model derives from
 `rtos::model::BaseModel` and implements the following lifecycle:
@@ -34,3 +36,8 @@ Models that subscribe with a callback capturing `this` retain the returned
 move-only `SubscriptionHandle` as a member. Termination may reset it explicitly;
 normal model destruction also unregisters it automatically, preventing the
 dispatch registry from retaining a callback to a destroyed model.
+
+Models may execute in a host worker PID or a FreeRTOS task without source
+changes. Their constructors receive messaging and logging dependencies; frame
+advancement, scheduling, task priority, process creation, and transport routing
+remain execution-layer responsibilities.

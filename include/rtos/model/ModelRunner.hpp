@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public ModelRunner framework API.
+ */
+
 #pragma once
 
 #include "rtos/model/BaseModel.hpp"

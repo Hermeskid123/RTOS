@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Defines DispatchPortTests coverage for the RTOS framework test suite.
+ */
+
 #include "TestFramework.hpp"
 
 #include "messages/MotorCommand.hpp"
@@ -5,6 +10,10 @@
 #include "messages/SensorData.hpp"
 #include "rtos/messaging/DispatchPort.hpp"
 
+#include <atomic>
+#include <chrono>
+#include <future>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -437,4 +446,198 @@ TEST_CASE("moving a subscription handle transfers unsubscribe ownership")
 
     owner.reset();
     REQUIRE(port.subscriberCount<MotorCommand>() == 0);
+}
+
+TEST_CASE("concurrent publishers enqueue every message without loss")
+{
+    constexpr int publisherCount{8};
+    constexpr int messagesPerPublisher{250};
+    rtos::messaging::DispatchPort port;
+    std::atomic<int> callbacksInvoked{};
+    const auto subscription = port.subscribe<MotorCommand>(
+        [&callbacksInvoked](const MotorCommand&)
+        {
+            callbacksInvoked.fetch_add(1, std::memory_order_relaxed);
+        }
+    );
+
+    std::vector<std::jthread> publishers;
+    for (int publisher = 0; publisher < publisherCount; ++publisher) {
+        publishers.emplace_back(
+            [&port]
+            {
+                for (int message = 0; message < messagesPerPublisher; ++message) {
+                    port.send(MotorCommand{message});
+                }
+            }
+        );
+    }
+    for (auto& publisher : publishers) {
+        publisher.join();
+    }
+
+    REQUIRE(
+        port.pendingMessageCount()
+        == static_cast<std::size_t>(publisherCount * messagesPerPublisher)
+    );
+    const auto report = port.dispatchAll();
+    REQUIRE(report.messagesDispatched == publisherCount * messagesPerPublisher);
+    REQUIRE(callbacksInvoked.load(std::memory_order_relaxed)
+            == publisherCount * messagesPerPublisher);
+    REQUIRE(report.queueHighWaterMark == publisherCount * messagesPerPublisher);
+}
+
+TEST_CASE("publishing remains safe while another thread dispatches")
+{
+    constexpr int publisherCount{4};
+    constexpr int messagesPerPublisher{300};
+    rtos::messaging::DispatchPort port;
+    std::atomic<int> publishersRemaining{publisherCount};
+    std::atomic<int> callbacksInvoked{};
+    const auto subscription = port.subscribe<MotorCommand>(
+        [&callbacksInvoked](const MotorCommand&)
+        {
+            callbacksInvoked.fetch_add(1, std::memory_order_relaxed);
+        }
+    );
+
+    std::jthread dispatcher{
+        [&]
+        {
+            while (
+                publishersRemaining.load(std::memory_order_acquire) != 0
+                || port.pendingMessageCount() != 0
+            ) {
+                static_cast<void>(port.dispatchAll());
+                std::this_thread::yield();
+            }
+        }
+    };
+    std::vector<std::jthread> publishers;
+    for (int publisher = 0; publisher < publisherCount; ++publisher) {
+        publishers.emplace_back(
+            [&]
+            {
+                for (int message = 0; message < messagesPerPublisher; ++message) {
+                    port.send(MotorCommand{message});
+                }
+                publishersRemaining.fetch_sub(1, std::memory_order_release);
+            }
+        );
+    }
+    for (auto& publisher : publishers) {
+        publisher.join();
+    }
+    dispatcher.join();
+
+    REQUIRE(callbacksInvoked.load(std::memory_order_relaxed)
+            == publisherCount * messagesPerPublisher);
+    REQUIRE(port.pendingMessageCount() == 0);
+}
+
+TEST_CASE("unsubscribe waits for a callback running on another thread")
+{
+    using namespace std::chrono_literals;
+
+    rtos::messaging::DispatchPort port;
+    std::promise<void> callbackEntered;
+    std::promise<void> allowCallbackToExit;
+    auto exitSignal = allowCallbackToExit.get_future().share();
+    std::atomic<bool> resetStarted{};
+    std::atomic<bool> callbackFinished{};
+    auto subscription = port.subscribe<MotorCommand>(
+        [&](const MotorCommand&)
+        {
+            callbackEntered.set_value();
+            exitSignal.wait();
+            callbackFinished.store(true, std::memory_order_release);
+        }
+    );
+    port.send(MotorCommand{1500});
+
+    std::jthread dispatcher{[&port] { static_cast<void>(port.dispatchAll()); }};
+    callbackEntered.get_future().wait();
+    auto reset = std::async(
+        std::launch::async,
+        [&]
+        {
+            resetStarted.store(true, std::memory_order_release);
+            subscription.reset();
+        }
+    );
+    while (!resetStarted.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+
+    REQUIRE(reset.wait_for(2ms) == std::future_status::timeout);
+    REQUIRE(!callbackFinished.load(std::memory_order_acquire));
+    allowCallbackToExit.set_value();
+    reset.get();
+    dispatcher.join();
+
+    REQUIRE(callbackFinished.load(std::memory_order_acquire));
+    REQUIRE(!subscription.active());
+}
+
+TEST_CASE("bounded queue rejects newest messages when full")
+{
+    using namespace rtos::messaging;
+    DispatchPort port{"bounded", QueueConfiguration{2, 32, QueueFullPolicy::rejectNewest}};
+    std::vector<int> received;
+    const auto subscription = port.subscribe<MotorCommand>(
+        [&received](const MotorCommand& message) { received.push_back(message.targetRpm); }
+    );
+
+    REQUIRE(port.send(MotorCommand{1}) == SendResult::queued);
+    REQUIRE(port.send(MotorCommand{2}) == SendResult::queued);
+    REQUIRE(port.send(MotorCommand{3}) == SendResult::rejectedQueueFull);
+    REQUIRE(port.pendingMessageCount() == 2);
+    static_cast<void>(port.dispatchAll());
+
+    REQUIRE(received == std::vector<int>({1, 2}));
+    const auto statistics = port.queueStatistics();
+    REQUIRE(statistics.capacity == 2);
+    REQUIRE(statistics.highWaterMark == 2);
+    REQUIRE(statistics.rejectedQueueFull == 1);
+}
+
+TEST_CASE("bounded queue can drop newest messages when full")
+{
+    using namespace rtos::messaging;
+    DispatchPort port{"bounded", QueueConfiguration{1, 32, QueueFullPolicy::dropNewest}};
+
+    REQUIRE(port.send(MotorCommand{1}) == SendResult::queued);
+    REQUIRE(port.send(MotorCommand{2}) == SendResult::droppedNewest);
+    REQUIRE(port.queueStatistics().droppedNewest == 1);
+}
+
+TEST_CASE("bounded queue can replace the oldest message when full")
+{
+    using namespace rtos::messaging;
+    DispatchPort port{"bounded", QueueConfiguration{2, 32, QueueFullPolicy::dropOldest}};
+    std::vector<int> received;
+    const auto subscription = port.subscribe<MotorCommand>(
+        [&received](const MotorCommand& message) { received.push_back(message.targetRpm); }
+    );
+
+    REQUIRE(port.send(MotorCommand{1}) == SendResult::queued);
+    REQUIRE(port.send(MotorCommand{2}) == SendResult::queued);
+    REQUIRE(port.send(MotorCommand{3}) == SendResult::queuedAfterDroppingOldest);
+    static_cast<void>(port.dispatchAll());
+
+    REQUIRE(received == std::vector<int>({2, 3}));
+    REQUIRE(port.queueStatistics().droppedOldest == 1);
+}
+
+TEST_CASE("bounded queue rejects messages larger than its configured payload")
+{
+    struct LargeMessage {
+        std::byte payload[64];
+    };
+    using namespace rtos::messaging;
+    DispatchPort port{"bounded", QueueConfiguration{2, 16}};
+
+    REQUIRE(port.send(LargeMessage{}) == SendResult::messageTooLarge);
+    REQUIRE(port.pendingMessageCount() == 0);
+    REQUIRE(port.queueStatistics().rejectedOversize == 1);
 }

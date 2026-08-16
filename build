@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# @file build
+# @brief Configures, builds, cleans, and optionally tests the host project.
 
 set -euo pipefail
 

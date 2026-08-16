@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# @file scripts/build.sh
+# @brief Preserves the legacy build-script entry point.
 
 set -euo pipefail
 

@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the ModelRunner framework API.
+ */
+
 #include "rtos/model/ModelRunner.hpp"
 
 #include <utility>

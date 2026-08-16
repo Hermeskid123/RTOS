@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the ModelConfiguration framework API.
+ */
+
 #include "rtos/model/ModelConfiguration.hpp"
 
 #include <fstream>

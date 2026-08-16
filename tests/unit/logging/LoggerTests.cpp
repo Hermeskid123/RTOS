@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Defines LoggerTests coverage for the RTOS framework test suite.
+ */
+
 #include "TestFramework.hpp"
 
 #include "rtos/logging/Logger.hpp"

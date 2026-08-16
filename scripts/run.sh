@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# @file scripts/run.sh
+# @brief Preserves the legacy simulator launch entry point.
 
 set -euo pipefail
 

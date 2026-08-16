@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public ModelConfiguration framework API.
+ */
+
 #pragma once
 
 #include <filesystem>

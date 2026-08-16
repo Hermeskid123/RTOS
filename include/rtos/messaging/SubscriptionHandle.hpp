@@ -1,10 +1,19 @@
+/**
+ * @file
+ * @brief Declares the public SubscriptionHandle framework API.
+ */
+
 #pragma once
 
 #include <cstddef>
+#include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <typeindex>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace rtos::messaging {
@@ -12,9 +21,20 @@ namespace rtos::messaging {
 namespace detail {
 
 struct SubscriptionSlot {
+    SubscriptionSlot(std::size_t id, std::function<void(const void*)> callback)
+        : id{id}, callback{std::move(callback)}
+    {
+    }
+
+    [[nodiscard]] bool invoke(const void* payload);
+    void deactivateAndWait() noexcept;
+
     std::size_t id{};
-    bool active{true};
+    std::atomic<bool> active{true};
     std::function<void(const void*)> callback;
+    std::mutex executionMutex;
+    std::condition_variable executionComplete;
+    std::size_t callbacksInFlight{};
 };
 
 struct SubscriptionState {
@@ -25,6 +45,7 @@ struct SubscriptionState {
         std::vector<std::shared_ptr<SubscriptionSlot>>
     > subscribers;
     std::size_t nextId{1};
+    mutable std::mutex mutex;
 };
 
 }  // namespace detail
