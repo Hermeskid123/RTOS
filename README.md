@@ -52,6 +52,13 @@ cmake -S . -B .build-docs -DRTOS_BUILD_DOCUMENTATION=ON
 cmake --build .build-docs --target rtos_docs
 ```
 
+Generate the complete release reference as HTML, XML, and PDF under
+`Documents/` (Doxygen plus either LaTeX or LibreOffice is required):
+
+```bash
+./scripts/generate-docs.sh
+```
+
 ## Run
 
 ```bash

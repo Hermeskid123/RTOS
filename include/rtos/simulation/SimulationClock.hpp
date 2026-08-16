@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Declares the public SimulationClock framework API.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #pragma once
@@ -12,9 +13,12 @@ namespace rtos::simulation {
 
 class SimulatorCore;
 
+/** @brief Mutex-protected monotonic simulation clock. */
 class SimulationClock final {
 public:
+    /** @brief Underlying host monotonic clock. */
     using clock_type = std::chrono::steady_clock;
+    /** @brief Duration type used for synchronized elapsed time. */
     using duration = clock_type::duration;
 
     SimulationClock(const SimulationClock&) = delete;
@@ -22,7 +26,9 @@ public:
     SimulationClock(SimulationClock&&) = delete;
     SimulationClock& operator=(SimulationClock&&) = delete;
 
+    /** @brief Returns total elapsed time, including the current running span. */
     [[nodiscard]] duration elapsed() const;
+    /** @brief Reports whether elapsed time is actively advancing. */
     [[nodiscard]] bool isRunning() const;
 
 private:

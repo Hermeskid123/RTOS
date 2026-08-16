@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Declares the public SubscriptionRegistry framework API.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #pragma once
@@ -18,12 +19,21 @@ namespace rtos::messaging {
 
 class DispatchPort;
 
+/** @brief Thread-safe exact-type callback registry owned by DispatchPort. */
 class SubscriptionRegistry {
 public:
+    /** @brief Creates an empty registry with shared lifetime state. */
     SubscriptionRegistry();
     SubscriptionRegistry(const SubscriptionRegistry&) = delete;
     SubscriptionRegistry& operator=(const SubscriptionRegistry&) = delete;
 
+    /**
+     * @brief Registers a callback for an exact message type.
+     * @tparam Message Message type delivered to the callback.
+     * @tparam Callback Callable accepting `const Message&`.
+     * @param callback Callable to retain until the returned handle is reset.
+     * @return Move-only subscription lifetime handle.
+     */
     template<typename Message, typename Callback>
     [[nodiscard]] SubscriptionHandle add(Callback&& callback)
     {
@@ -50,6 +60,7 @@ public:
         return SubscriptionHandle{state_, type, id};
     }
 
+    /** @brief Returns the number of active callbacks for `Message`. */
     template<typename Message>
     [[nodiscard]] std::size_t count() const
     {

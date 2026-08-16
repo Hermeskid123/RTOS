@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Implements the MotorModel example application model.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #include "models/MotorModel/MotorModel.hpp"

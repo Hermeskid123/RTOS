@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Implements the FreeRtosAdapter framework API.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #include "rtos/platform/freertos/FreeRtosAdapter.hpp"

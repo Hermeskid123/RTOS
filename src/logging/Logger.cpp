@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Implements the Logger framework API.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #include "rtos/logging/Logger.hpp"

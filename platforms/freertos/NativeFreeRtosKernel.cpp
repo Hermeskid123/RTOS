@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Implements the native FreeRTOS kernel binding.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #include "platforms/freertos/NativeFreeRtosKernel.hpp"

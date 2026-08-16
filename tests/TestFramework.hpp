@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Defines TestFramework coverage for the RTOS framework test suite.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #pragma once
@@ -17,25 +18,32 @@
 
 namespace test {
 
+/** @brief Registered test case name and executable body. */
 struct Case {
+    /** Human-readable test name. */
     std::string_view name;
+    /** Test body that throws on failure. */
     std::function<void()> function;
 };
 
+/** @brief Returns the process-wide ordered test registry. */
 inline std::vector<Case>& registry()
 {
     static std::vector<Case> cases;
     return cases;
 }
 
+/** @brief Static helper that inserts a test case during initialization. */
 class Registration {
 public:
+    /** @brief Registers `function` under `name`. */
     Registration(const std::string_view name, std::function<void()> function)
     {
         registry().push_back(Case{name, std::move(function)});
     }
 };
 
+/** @brief Throws a formatted assertion failure at the source location. */
 [[noreturn]] inline void fail(
     const std::string_view expression,
     const std::string_view file,
@@ -47,6 +55,7 @@ public:
     throw std::runtime_error{message.str()};
 }
 
+/** @brief Runs every registered test and returns a process exit status. */
 inline int runAll()
 {
     std::size_t failures{};
@@ -69,6 +78,7 @@ inline int runAll()
     return failures == 0 ? 0 : 1;
 }
 
+/** @brief Runs one exact named test and returns a process exit status. */
 inline int runNamed(const std::string_view requestedName)
 {
     for (const auto& testCase : registry()) {

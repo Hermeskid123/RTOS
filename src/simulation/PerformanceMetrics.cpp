@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Implements the PerformanceMetrics framework API.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #include "rtos/simulation/PerformanceMetrics.hpp"
