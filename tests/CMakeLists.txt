@@ -3,6 +3,8 @@ set(RTOS_UNIT_TEST_SOURCES
     unit/messaging/DispatchPortTests.cpp
     unit/messaging/PublisherSubscriberModelTests.cpp
     unit/messaging/SubscriptionRegistryTests.cpp
+    unit/model/ModelFrameworkTests.cpp
+    unit/model/ModelConfigurationTests.cpp
 )
 
 add_executable(rtos_unit_tests TestMain.cpp ${RTOS_UNIT_TEST_SOURCES})

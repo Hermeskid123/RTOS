@@ -1,12 +1,19 @@
 #pragma once
 
 #include "rtos/messaging/DispatchReport.hpp"
+#include "rtos/messaging/MessageTraffic.hpp"
+#include "rtos/messaging/PortTopology.hpp"
 #include "rtos/messaging/SubscriptionRegistry.hpp"
 
 #include <cstddef>
+#include <algorithm>
 #include <memory>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <typeindex>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -14,7 +21,45 @@ namespace rtos::messaging {
 
 class DispatchPort {
 public:
-    DispatchPort() = default;
+    class Port {
+    public:
+        template<typename Message, typename Callback>
+        void subscribe(Callback&& callback)
+        {
+            owner_->subscribeFrom<Message>(number_, std::forward<Callback>(callback));
+        }
+
+        template<typename Message>
+        void send(const Message& message)
+        {
+            owner_->sendFrom(number_, message);
+        }
+
+        template<typename Message>
+            requires(!std::is_lvalue_reference_v<Message>)
+        void send(Message&& message)
+        {
+            owner_->sendFrom(number_, std::forward<Message>(message));
+        }
+
+        [[nodiscard]] std::size_t number() const noexcept
+        {
+            return number_;
+        }
+
+    private:
+        friend class DispatchPort;
+
+        Port(DispatchPort& owner, const std::size_t number) noexcept
+            : owner_{&owner}, number_{number}
+        {
+        }
+
+        DispatchPort* owner_;
+        std::size_t number_;
+    };
+
+    explicit DispatchPort(std::string name = "main");
     DispatchPort(const DispatchPort&) = delete;
     DispatchPort& operator=(const DispatchPort&) = delete;
     DispatchPort(DispatchPort&&) = delete;
@@ -24,7 +69,31 @@ public:
     template<typename Message, typename Callback>
     void subscribe(Callback&& callback)
     {
-        subscriptions_.add<Message>(std::forward<Callback>(callback));
+        using SubscribedMessage = std::remove_cvref_t<Message>;
+        subscriptions_.add<SubscribedMessage>(std::forward<Callback>(callback));
+        auto& traffic = traffic_[typeid(SubscribedMessage)];
+        traffic.messageName = messageName<SubscribedMessage>();
+        traffic.subscribers = subscriptions_.count<SubscribedMessage>();
+    }
+
+    template<typename Message>
+    [[nodiscard]] Port createPort(std::string name, const PortDirection direction)
+    {
+        using PortMessage = std::remove_cvref_t<Message>;
+        const auto number = nextPortNumber_++;
+        ports_.push_back(PortRecord{
+            number,
+            std::move(name),
+            messageName<PortMessage>(),
+            typeid(PortMessage),
+            direction,
+        });
+        auto& traffic = traffic_[typeid(PortMessage)];
+        traffic.messageName = messageName<PortMessage>();
+        if (direction == PortDirection::publisher) {
+            ++traffic.publishers;
+        }
+        return Port{*this, number};
     }
 
     template<typename Message>
@@ -47,11 +116,23 @@ public:
     }
 
     DispatchReport dispatchAll();
+    [[nodiscard]] std::string_view name() const noexcept;
+    [[nodiscard]] std::size_t pendingMessageCount() const noexcept;
+    [[nodiscard]] std::vector<MessageTraffic> messageTraffic() const;
+    [[nodiscard]] std::vector<PortTopology> portTopology() const;
 
 private:
     struct PendingMessage {
         std::type_index type;
         std::shared_ptr<const void> payload;
+    };
+
+    struct PortRecord {
+        std::size_t number;
+        std::string name;
+        std::string messageName;
+        std::type_index messageType;
+        PortDirection direction;
     };
 
     class DispatchScope {
@@ -77,14 +158,57 @@ private:
     template<typename StoredMessage, typename Message>
     void enqueue(Message&& message)
     {
+        auto& traffic = traffic_[typeid(StoredMessage)];
+        traffic.messageName = messageName<StoredMessage>();
+        ++traffic.messagesSent;
         incomingQueue_.push_back(PendingMessage{
             typeid(StoredMessage),
             std::make_shared<StoredMessage>(std::forward<Message>(message)),
         });
     }
 
+    template<typename Message, typename Callback>
+    void subscribeFrom(const std::size_t number, Callback&& callback)
+    {
+        validatePort<Message>(number, PortDirection::subscriber);
+        subscribe<Message>(std::forward<Callback>(callback));
+    }
+
+    template<typename Message>
+    void sendFrom(const std::size_t number, Message&& message)
+    {
+        using SentMessage = std::remove_cvref_t<Message>;
+        validatePort<SentMessage>(number, PortDirection::publisher);
+        send(std::forward<Message>(message));
+    }
+
+    template<typename Message>
+    void validatePort(const std::size_t number, const PortDirection direction) const
+    {
+        const auto port = std::ranges::find(ports_, number, &PortRecord::number);
+        if (
+            port == ports_.end() || port->messageType != typeid(std::remove_cvref_t<Message>)
+            || port->direction != direction
+        ) {
+            throw std::logic_error{"Message used with an incompatible port"};
+        }
+    }
+
+    template<typename Message>
+    [[nodiscard]] static std::string messageName()
+    {
+        if constexpr (requires { Message::name; }) {
+            return std::string{Message::name};
+        }
+        return typeid(Message).name();
+    }
+
+    std::string name_;
     SubscriptionRegistry subscriptions_;
     std::vector<PendingMessage> incomingQueue_;
+    std::unordered_map<std::type_index, MessageTraffic> traffic_;
+    std::vector<PortRecord> ports_;
+    std::size_t nextPortNumber_{1};
     bool dispatchInProgress_{};
 };
 
