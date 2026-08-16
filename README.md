@@ -1,9 +1,9 @@
 # C++ RTOS Model Framework
 
 A host-testable C++20 foundation for exploring RTOS models, scheduling, and the
-project's ROS Messaging publish/subscribe architecture. The framework currently
-implements Milestones 1–3 from [`Project.md`](Project.md), including strongly
-typed deferred publish/subscribe routing.
+project's ROS Messaging publish/subscribe architecture. The framework includes
+the Milestone 4 model lifecycle, status-reporting runner, example models, and
+strongly typed deferred publish/subscribe routing.
 
 ## Requirements
 
@@ -38,13 +38,46 @@ compatibility wrapper around `./build`.
 ```bash
 ./.build/rtos_sim
 ./.build/rtos_sim --help
+./run --debug
 ```
+
+The simulator starts an interactive shell. Common commands are:
+
+```text
+start
+status
+ports
+messages
+stop models
+stop sim
+quit
+```
+
+The interactive `run` command starts continuous execution on a background
+worker, leaving the prompt available for `status`, `ports`, `messages`, `stop
+models`, and `stop sim`. Use `run <frames>` for a fixed run.
+
+Logging is configured when launching the executable. `./run` prints `ERROR` and
+`FATAL` records by default, `./run --info` and `./run --debug` increase
+verbosity, and `./run --noLogging` suppresses every log record.
+
+Model arguments live in `xml/models.xml`. Each model can be enabled or disabled,
+allowed to emit DEBUG records, and marked for GDB attachment. Use the interactive
+`models` command to inspect the loaded configuration or launch with
+`./run --models <file>` to select another XML file. See
+[`docs/model_configuration.md`](docs/model_configuration.md).
+
+Host binaries include GDB symbols by default. On Linux, an enabled model with
+`debug="true"` or `gdb="true"` enables runtime `ptrace` attachment for the
+simulator process so the configured xterm GDB session can attach without Yama
+permission failures.
 
 The run script uses the default build directory, builds the project if needed,
 and forwards optional simulator arguments:
 
 ```bash
-./scripts/run.sh
+./run
+./run --info
 ./scripts/run.sh --help
 ```
 
@@ -81,6 +114,10 @@ and routes them to callbacks registered through `subscribe<Message>()` when
 message types and multiple subscribers while preserving a deterministic dispatch
 boundary. Per-type subscriber counts and per-cycle dispatch reports make routing
 and no-subscriber behavior observable.
+
+Models create explicitly named and numbered message endpoints such as
+`MotorCommand_port`. The interactive `ports` command lists each endpoint and the
+port numbers publishing to or subscribing from it.
 
 Concrete project messages are defined in `messages/`. See
 [`docs/ros_messaging.md`](docs/ros_messaging.md) for API semantics and examples.

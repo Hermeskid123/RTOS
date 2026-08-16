@@ -1,7 +1,9 @@
 #pragma once
 
 #include <iosfwd>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace rtos::logging {
 
@@ -22,6 +24,9 @@ public:
 
     void setLevel(LogLevel minimumLevel) noexcept;
     [[nodiscard]] LogLevel level() const noexcept;
+    void setEnabled(bool enabled) noexcept;
+    [[nodiscard]] bool enabled() const noexcept;
+    void setComponentDebugEnabled(std::string component, bool enabled);
 
     void log(
         LogLevel level,
@@ -33,6 +38,8 @@ public:
 private:
     std::ostream* output_;
     LogLevel minimumLevel_;
+    bool enabled_{true};
+    std::unordered_map<std::string, bool> componentDebugEnabled_;
 };
 
 }  // namespace rtos::logging

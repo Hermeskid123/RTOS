@@ -361,18 +361,28 @@ LoggerModel
 
 Models should not depend directly upon concrete implementations of other models.
 
-A basic model lifecycle may initially be:
+A model lifecycle is:
 
 ```cpp
-class IModel
+class BaseModel
 {
 public:
-    virtual ~IModel() = default;
+    virtual ~BaseModel() = default;
 
-    virtual void initialize() = 0;
-    virtual void update() = 0;
+    virtual ControlStatus initialize() = 0;
+    virtual ControlStatus begin() = 0;
+    virtual ControlStatus freeze() = 0;
+    virtual ControlStatus operate() = 0;
+    virtual ControlStatus terminate() = 0;
+    virtual ControlStatus status() const = 0;
 };
 ```
+
+`initialize()` is called immediately after construction, before execution;
+`begin()` starts or resumes the model; `operate()` performs one scheduled cycle;
+`freeze()` pauses the model; and `terminate()` performs final teardown. Each
+operation returns `STOPPED`, `RUNNING`, or `TERMINATED` for reporting to the
+execution environment.
 
 The exact interface may evolve if compile-time polymorphism proves preferable.
 
@@ -381,42 +391,73 @@ Models receive required framework dependencies through construction or initializ
 Example:
 
 ```cpp
-class MotorModel : public IModel
+class MotorModel : public BaseModel
 {
 public:
-    explicit MotorModel(DispatchPort& port)
-        : port_(port)
+    MotorModel(DispatchPort& port, Logger& logger)
+        : port_(port), logger_(logger)
     {
     }
 
-    void initialize() override
+    ControlStatus initialize() override
     {
         port_.subscribe<MotorCommand>(
             [this](const MotorCommand& message)
             {
                 onMotorCommand(message);
             });
+        return status_;
     }
 
-    void update() override
+    ControlStatus begin() override
     {
+        status_ = ControlStatus::running;
+        logger_.log(LogLevel::debug, "MotorModel", "BEGIN", "started");
+        return status_;
+    }
+
+    ControlStatus freeze() override
+    {
+        status_ = ControlStatus::stopped;
+        return status_;
+    }
+
+    ControlStatus operate() override
+    {
+        if (status_ != ControlStatus::running) {
+            return status_;
+        }
+
         MotorStatus status{
             .currentRpm = currentRpm_
         };
 
         port_.send(status);
+        logger_.log(LogLevel::debug, "MotorModel", "TX", "MotorStatus sent");
+        return status_;
     }
+
+    ControlStatus terminate() override
+    {
+        status_ = ControlStatus::terminated;
+        return status_;
+    }
+
+    ControlStatus status() const override { return status_; }
 
 private:
     void onMotorCommand(const MotorCommand& message)
     {
         targetRpm_ = message.targetRpm;
+        logger_.log(LogLevel::debug, "MotorModel", "RX", "MotorCommand received");
     }
 
     DispatchPort& port_;
+    Logger& logger_;
 
     int32_t currentRpm_{};
     int32_t targetRpm_{};
+    ControlStatus status_{ControlStatus::stopped};
 };
 ```
 
@@ -454,7 +495,7 @@ INPUT
 PROCESSING
     Model state
     Algorithms
-    update()
+    operate()
 
 OUTPUT
     ROS Messaging send()
@@ -469,7 +510,7 @@ RTOS Task
 ModelRunner
     │
     ▼
-model.update()
+model.operate()
 ```
 
 This permits:
@@ -678,6 +719,13 @@ Recommended options:
 --list-topics
 ```
 
+Logging switches are process arguments: `rtos_sim --debug`, `rtos_sim --info`,
+or `rtos_sim --noLogging`. Normal launches emit only `ERROR` and `FATAL`
+records. In the interactive shell, `run` starts continuous execution on a
+background worker so status and diagnostics remain available. `stop models`,
+`stop sim`, or `quit` stops that worker. `run <frames>` remains available for a
+fixed run.
+
 Example:
 
 ```bash
@@ -725,7 +773,7 @@ cpp-rtos/
 │   └── rtos/
 │       │
 │       ├── model/
-│       │   ├── IModel.hpp
+│       │   ├── BaseModel.hpp
 │       │   └── ModelRunner.hpp
 │       │
 │       ├── messaging/
@@ -861,10 +909,13 @@ Each message must reach only its registered subscribers.
 Implement:
 
 ```cpp
-IModel
+BaseModel
 ModelRunner
 initialize()
-update()
+begin()
+freeze()
+operate()
+terminate()
 ```
 
 Create example:
@@ -1047,6 +1098,18 @@ networkPort
 ```
 
 Models could explicitly connect to the ports relevant to their responsibilities.
+
+The initial host implementation assigns a sequential number to every named model
+endpoint. Each endpoint declares its message type and publisher or subscriber
+direction. Port diagnostics report the connected publisher and subscriber port
+numbers, allowing the CLI `ports` command to display the live message topology.
+
+Host model arguments are loaded from `xml/models.xml`. Each entry controls model
+enablement, component DEBUG output, and whether the host launches an xterm GDB
+attachment for that model. Models share the `rtos_sim` PID because they are
+objects in one process. Disabled models are not constructed, scheduled, or
+represented by message ports. Missing model control-status reports are presented
+as `STOPPED` by the host.
 
 **Dedicated Messaging Tasks**
 

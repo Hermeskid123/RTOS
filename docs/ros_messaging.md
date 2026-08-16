@@ -70,3 +70,28 @@ The current implementation is single-threaded and uses dynamic allocation for
 host development. Subscription lifetime and bounded embedded storage are planned
 for later milestones. ROS Messaging is an internal name and does not imply
 compatibility with ROS 1 or ROS 2.
+
+## Diagnostics
+
+Each `DispatchPort` has a name and exposes its pending queue depth through
+`pendingMessageCount()`. `messageTraffic()` reports every registered or sent
+message type, including publisher, subscriber, sent, received, dispatched, and
+no-subscriber counts. Received counts represent subscriber callback deliveries,
+so one dispatched message can produce multiple received deliveries.
+The host CLI uses these diagnostics for its `ports` and `messages` commands.
+
+## Named Model Ports
+
+Models create typed endpoints with an explicit name and direction:
+
+```cpp
+auto commandPort = dispatchPort.createPort<MotorCommand>(
+    "MotorCommand_port",
+    PortDirection::publisher
+);
+```
+
+Each endpoint receives a sequential port number. `portTopology()` reports its
+name, number, message type, publisher port numbers, and subscriber port numbers.
+Publisher/subscriber relationships are derived by matching message types. The
+CLI `ports` command displays this topology even before the simulation starts.
