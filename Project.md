@@ -951,6 +951,16 @@ logging
 
 Verify deterministic dispatch boundaries.
 
+The host simulator shall run each enabled model in its own worker process. The
+coordinator remains the source of truth for frame number and simulation time and
+synchronizes those values to each worker before `operate()`. Every model worker
+owns a separate `DispatchPort`; the coordinator routes transport envelopes
+between those ports at the frame dispatch boundary.
+
+Every model endpoint declares a transport type and routing ID. A message type
+shall define `defaultRoutingId`, which `createPort<Message>()` uses when the
+endpoint does not explicitly provide a routing ID.
+
 ### Milestone 6 — Subscription Lifetime
 
 Implement safe subscription ownership.
@@ -1097,7 +1107,8 @@ diagnosticPort
 networkPort
 ```
 
-Models could explicitly connect to the ports relevant to their responsibilities.
+Models explicitly connect to the ports relevant to their responsibilities. In
+the host simulator, each model worker owns its own IPC `DispatchPort`.
 
 The initial host implementation assigns a sequential number to every named model
 endpoint. Each endpoint declares its message type and publisher or subscriber
@@ -1106,10 +1117,10 @@ numbers, allowing the CLI `ports` command to display the live message topology.
 
 Host model arguments are loaded from `xml/models.xml`. Each entry controls model
 enablement, component DEBUG output, and whether the host launches an xterm GDB
-attachment for that model. Models share the `rtos_sim` PID because they are
-objects in one process. Disabled models are not constructed, scheduled, or
-represented by message ports. Missing model control-status reports are presented
-as `STOPPED` by the host.
+attachment for that model. Every enabled model runs in a separate child PID and
+owns a separate IPC dispatch port. Disabled models are not constructed,
+scheduled, or represented by message ports. Missing model control-status reports
+are presented as `STOPPED` by the host.
 
 **Dedicated Messaging Tasks**
 

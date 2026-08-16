@@ -7,6 +7,7 @@ namespace rtos::messages {
 
 struct MotorStatus {
     static constexpr std::string_view name{"MotorStatus"};
+    static constexpr std::uint32_t defaultRoutingId{1003};
     std::int32_t currentRpm;
 };
 

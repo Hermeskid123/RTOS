@@ -4,10 +4,14 @@
 #include "rtos/messaging/MessageTraffic.hpp"
 #include "rtos/messaging/PortTopology.hpp"
 #include "rtos/messaging/SubscriptionRegistry.hpp"
+#include "rtos/messaging/Transport.hpp"
 
-#include <cstddef>
 #include <algorithm>
+#include <cstddef>
+#include <cstring>
+#include <functional>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -42,10 +46,7 @@ public:
             owner_->sendFrom(number_, std::forward<Message>(message));
         }
 
-        [[nodiscard]] std::size_t number() const noexcept
-        {
-            return number_;
-        }
+        [[nodiscard]] std::size_t number() const noexcept { return number_; }
 
     private:
         friend class DispatchPort;
@@ -59,7 +60,11 @@ public:
         std::size_t number_;
     };
 
-    explicit DispatchPort(std::string name = "main");
+    explicit DispatchPort(
+        std::string name = "main",
+        TransportType transportType = TransportType::inProcess,
+        MessageTransport* transport = nullptr
+    );
     DispatchPort(const DispatchPort&) = delete;
     DispatchPort& operator=(const DispatchPort&) = delete;
     DispatchPort(DispatchPort&&) = delete;
@@ -77,9 +82,17 @@ public:
     }
 
     template<typename Message>
-    [[nodiscard]] Port createPort(std::string name, const PortDirection direction)
+    [[nodiscard]] Port createPort(
+        std::string name,
+        const PortDirection direction,
+        const RoutingId routingId = defaultRoutingId<Message>()
+    )
     {
         using PortMessage = std::remove_cvref_t<Message>;
+        static_assert(
+            std::is_trivially_copyable_v<PortMessage>,
+            "Transported messages must be trivially copyable"
+        );
         const auto number = nextPortNumber_++;
         ports_.push_back(PortRecord{
             number,
@@ -87,6 +100,17 @@ public:
             messageName<PortMessage>(),
             typeid(PortMessage),
             direction,
+            transportType_,
+            routingId,
+            [](const std::span<const std::byte> payload) -> std::shared_ptr<const void>
+            {
+                if (payload.size() != sizeof(PortMessage)) {
+                    throw std::runtime_error{"Invalid transported message size"};
+                }
+                auto message = std::make_shared<PortMessage>();
+                std::memcpy(message.get(), payload.data(), sizeof(PortMessage));
+                return message;
+            },
         });
         auto& traffic = traffic_[typeid(PortMessage)];
         traffic.messageName = messageName<PortMessage>();
@@ -99,14 +123,16 @@ public:
     template<typename Message>
     void send(const Message& message)
     {
-        enqueue<std::remove_cv_t<Message>>(message);
+        enqueue<std::remove_cv_t<Message>>(message, defaultRoutingId<Message>());
     }
 
     template<typename Message>
         requires(!std::is_lvalue_reference_v<Message>)
     void send(Message&& message)
     {
-        enqueue<std::remove_cvref_t<Message>>(std::forward<Message>(message));
+        enqueue<std::remove_cvref_t<Message>>(
+            std::forward<Message>(message), defaultRoutingId<Message>()
+        );
     }
 
     template<typename Message>
@@ -120,6 +146,8 @@ public:
     [[nodiscard]] std::size_t pendingMessageCount() const noexcept;
     [[nodiscard]] std::vector<MessageTraffic> messageTraffic() const;
     [[nodiscard]] std::vector<PortTopology> portTopology() const;
+    [[nodiscard]] TransportType transportType() const noexcept;
+    [[nodiscard]] bool receive(const TransportMessage& message);
 
 private:
     struct PendingMessage {
@@ -133,6 +161,9 @@ private:
         std::string messageName;
         std::type_index messageType;
         PortDirection direction;
+        TransportType transport;
+        RoutingId routingId;
+        std::function<std::shared_ptr<const void>(std::span<const std::byte>)> decode;
     };
 
     class DispatchScope {
@@ -142,25 +173,36 @@ private:
         {
             dispatchInProgress_ = true;
         }
-
         DispatchScope(const DispatchScope&) = delete;
         DispatchScope& operator=(const DispatchScope&) = delete;
-
-        ~DispatchScope()
-        {
-            dispatchInProgress_ = false;
-        }
+        ~DispatchScope() { dispatchInProgress_ = false; }
 
     private:
         bool& dispatchInProgress_;
     };
 
     template<typename StoredMessage, typename Message>
-    void enqueue(Message&& message)
+    void enqueue(Message&& message, const RoutingId routingId)
     {
+        static_assert(
+            std::is_trivially_copyable_v<StoredMessage>,
+            "Transported messages must be trivially copyable"
+        );
         auto& traffic = traffic_[typeid(StoredMessage)];
         traffic.messageName = messageName<StoredMessage>();
         ++traffic.messagesSent;
+        if (transport_ != nullptr) {
+            TransportMessage transported{
+                routingId,
+                messageName<StoredMessage>(),
+                std::vector<std::byte>(sizeof(StoredMessage)),
+            };
+            std::memcpy(
+                transported.payload.data(), std::addressof(message), sizeof(StoredMessage)
+            );
+            transport_->send(std::move(transported));
+            return;
+        }
         incomingQueue_.push_back(PendingMessage{
             typeid(StoredMessage),
             std::make_shared<StoredMessage>(std::forward<Message>(message)),
@@ -179,7 +221,8 @@ private:
     {
         using SentMessage = std::remove_cvref_t<Message>;
         validatePort<SentMessage>(number, PortDirection::publisher);
-        send(std::forward<Message>(message));
+        const auto port = std::ranges::find(ports_, number, &PortRecord::number);
+        enqueue<SentMessage>(std::forward<Message>(message), port->routingId);
     }
 
     template<typename Message>
@@ -203,7 +246,18 @@ private:
         return typeid(Message).name();
     }
 
+    template<typename Message>
+    [[nodiscard]] static consteval RoutingId defaultRoutingId()
+    {
+        if constexpr (requires { Message::defaultRoutingId; }) {
+            return Message::defaultRoutingId;
+        }
+        return 0;
+    }
+
     std::string name_;
+    TransportType transportType_;
+    MessageTransport* transport_;
     SubscriptionRegistry subscriptions_;
     std::vector<PendingMessage> incomingQueue_;
     std::unordered_map<std::type_index, MessageTraffic> traffic_;

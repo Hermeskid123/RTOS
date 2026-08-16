@@ -5,9 +5,16 @@
 
 namespace rtos::messaging {
 
-DispatchPort::DispatchPort(std::string name)
-    : name_{std::move(name)}
+DispatchPort::DispatchPort(
+    std::string name,
+    const TransportType transportType,
+    MessageTransport* const transport
+)
+    : name_{std::move(name)}, transportType_{transportType}, transport_{transport}
 {
+    if ((transportType_ == TransportType::interProcess) != (transport_ != nullptr)) {
+        throw std::invalid_argument{"IPC dispatch ports require a message transport"};
+    }
 }
 
 DispatchReport DispatchPort::dispatchAll()
@@ -78,6 +85,8 @@ std::vector<PortTopology> DispatchPort::portTopology() const
             port.name,
             port.messageName,
             port.direction,
+            port.transport,
+            port.routingId,
             {},
             {},
         };
@@ -101,6 +110,34 @@ std::vector<PortTopology> DispatchPort::portTopology() const
     }
 
     return topology;
+}
+
+TransportType DispatchPort::transportType() const noexcept
+{
+    return transportType_;
+}
+
+bool DispatchPort::receive(const TransportMessage& message)
+{
+    const auto port = std::ranges::find_if(
+        ports_,
+        [&message](const PortRecord& candidate)
+        {
+            return candidate.direction == PortDirection::subscriber
+                && candidate.routingId == message.routingId;
+        }
+    );
+    if (port == ports_.end()) {
+        return false;
+    }
+
+    auto& traffic = traffic_[port->messageType];
+    traffic.messageName = port->messageName;
+    incomingQueue_.push_back(PendingMessage{
+        port->messageType,
+        port->decode(message.payload),
+    });
+    return true;
 }
 
 }  // namespace rtos::messaging

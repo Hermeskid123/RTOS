@@ -1,5 +1,7 @@
 #pragma once
 
+#include "rtos/messaging/Transport.hpp"
+
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -16,6 +18,8 @@ struct PortTopology {
     std::string name;
     std::string messageName;
     PortDirection direction;
+    TransportType transport{TransportType::inProcess};
+    RoutingId routingId{};
     std::vector<std::size_t> publisherPorts;
     std::vector<std::size_t> subscriberPorts;
 };

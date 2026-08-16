@@ -1,10 +1,9 @@
-#include "models/ControlModel/ControlModel.hpp"
-#include "models/MotorModel/MotorModel.hpp"
-#include "models/SensorModel/SensorModel.hpp"
+#include "apps/rtos_sim/ModelProcess.hpp"
 #include "rtos/logging/Logger.hpp"
-#include "rtos/messaging/DispatchPort.hpp"
+#include "rtos/messaging/MessageTraffic.hpp"
 #include "rtos/model/ModelConfiguration.hpp"
 #include "rtos/model/ModelRunner.hpp"
+#include "rtos/simulation/SimulatorCore.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -12,6 +11,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <iomanip>
@@ -56,17 +56,21 @@ struct LoggingOptions {
 struct ProcessOptions {
     LoggingOptions logging;
     std::filesystem::path modelConfiguration{RTOS_DEFAULT_MODEL_CONFIG};
+    std::chrono::nanoseconds framePeriod{std::chrono::milliseconds{10}};
+    std::optional<std::size_t> frameCount;
 };
 
 void printHelp()
 {
     std::cout << "RTOS Model Simulator\n\n"
-                 "Usage: rtos_sim [--debug | --info | --noLogging] [--models <file>]\n\n"
+                 "Usage: rtos_sim [options]\n\n"
                  "Process options:\n"
                  "  --debug          Include DEBUG and higher log records\n"
                  "  --info           Include INFO and higher log records\n"
                  "  --noLogging      Disable every log record\n"
                  "  --models <file>  Select the models XML configuration\n"
+                 "  --frames <count>  Run a fixed number of frames and exit\n"
+                 "  --frame-rate <hz> Set the simulation frame rate (default: 100)\n"
                  "  --help           Show this help message\n"
                  "  --version        Show the simulator version\n\n"
                  "Interactive commands:\n"
@@ -95,26 +99,37 @@ void printReports(const std::vector<rtos::model::ModelStatusReport>& reports)
 class SimulatorCli {
 public:
     SimulatorCli(
-        const LoggingOptions options,
+        ProcessOptions options,
         rtos::model::ModelConfiguration configuration
     )
-        : logger_{std::cout, options.level},
-          port_{"main"},
-          configuration_{std::move(configuration)}
+        : logger_{std::cout, options.logging.level},
+          configuration_{std::move(configuration)},
+          loggingOptions_{options.logging},
+          framePeriod_{options.framePeriod},
+          startupFrameCount_{options.frameCount}
     {
-        logger_.setEnabled(options.enabled);
+        logger_.setEnabled(options.logging.enabled);
         for (const auto& model : configuration_.models()) {
             logger_.setComponentDebugEnabled(model.name, model.debugEnabled);
         }
 
         configureDebuggerAttachment();
-        createConfiguredModels();
     }
 
     int run()
     {
         std::cout << "RTOS Model Simulator " << version << "\n"
-                  << "Type 'help' for commands.\n";
+                  << "Frame Rate: "
+                  << std::chrono::duration<double>{1} / framePeriod_ << " Hz\n";
+
+        if (startupFrameCount_.has_value()) {
+            startModels();
+            runFrames(*startupFrameCount_);
+            terminateSimulation();
+            return 0;
+        }
+
+        std::cout << "Type 'help' for commands.\n";
 
         std::string command;
         while (std::cout << "rtos> " && std::getline(std::cin, command)) {
@@ -179,6 +194,8 @@ private:
             return;
         }
 
+        core_.start();
+        launchModelProcesses();
         initialized_ = true;
         launchConfiguredDebuggers();
         logger_.log(
@@ -187,7 +204,11 @@ private:
             "START",
             "Simulator initialized"
         );
-        printReports(runner_.initialize());
+        std::vector<rtos::model::ModelStatusReport> reports;
+        for (auto& process : processes_) {
+            reports.push_back({std::string{process->name()}, process->initialize().status});
+        }
+        printReports(reports);
     }
 
     void startAll()
@@ -204,7 +225,11 @@ private:
     {
         startSimulationIfNeeded();
         std::scoped_lock lock{simulationMutex_};
-        printReports(runner_.begin());
+        std::vector<rtos::model::ModelStatusReport> reports;
+        for (auto& process : processes_) {
+            reports.push_back({std::string{process->name()}, process->begin().status});
+        }
+        printReports(reports);
     }
 
     void stopModels()
@@ -215,7 +240,11 @@ private:
             std::cout << "Simulator is not initialized.\n";
             return;
         }
-        printReports(runner_.freeze());
+        std::vector<rtos::model::ModelStatusReport> reports;
+        for (auto& process : processes_) {
+            reports.push_back({std::string{process->name()}, process->freeze().status});
+        }
+        printReports(reports);
     }
 
     void terminateSimulation()
@@ -226,13 +255,20 @@ private:
             return;
         }
 
-        printReports(runner_.terminate());
+        std::vector<rtos::model::ModelStatusReport> reports;
+        for (auto& process : processes_) {
+            reports.push_back({std::string{process->name()}, process->terminate().status});
+        }
+        printReports(reports);
         logger_.log(
             rtos::logging::LogLevel::info,
             "Host",
             "STOP",
             "Simulator terminated"
         );
+        core_.stop();
+        processes_.clear();
+        launchedDebuggers_.clear();
         initialized_ = false;
     }
 
@@ -250,9 +286,11 @@ private:
         worker_ = std::jthread(
             [this](const std::stop_token stopToken)
             {
+                auto nextFrame = std::chrono::steady_clock::now();
                 while (!stopToken.stop_requested()) {
                     executeFrame();
-                    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+                    nextFrame += framePeriod_;
+                    std::this_thread::sleep_until(nextFrame);
                 }
             }
         );
@@ -270,24 +308,70 @@ private:
             return;
         }
 
+        auto nextFrame = std::chrono::steady_clock::now();
         for (std::size_t offset = 0; offset < count; ++offset) {
             executeFrame();
+            nextFrame += framePeriod_;
+            if (offset + 1 < count) {
+                std::this_thread::sleep_until(nextFrame);
+            }
         }
     }
 
     void executeFrame()
     {
         std::scoped_lock lock{simulationMutex_};
-        ++frame_;
-        if (sensor_) {
-            sensor_->setSensorValue(static_cast<double>(frame_));
+        core_.advanceFrame();
+        const auto frame = core_.frameCounter().current();
+        auto routedMessages = std::exchange(deferredMessages_, {});
+        for (auto& process : processes_) {
+            auto reply = process->operate(frame, core_.clock().elapsed());
+            for (auto& outgoing : reply.messages) {
+                auto& counters = traffic_[outgoing.messageName];
+                counters.messageName = outgoing.messageName;
+                ++counters.messagesSent;
+                routedMessages.push_back(std::move(outgoing));
+            }
         }
-        const auto modelReports = runner_.operate();
-        static_cast<void>(modelReports);
-        const auto dispatch = port_.dispatchAll();
+
+        rtos::messaging::DispatchReport dispatch;
+        for (const auto& routed : routedMessages) {
+            std::size_t subscriberCount{};
+            for (const auto& process : processes_) {
+                subscriberCount += static_cast<std::size_t>(std::ranges::count_if(
+                    process->topology(),
+                    [&routed](const rtos::messaging::PortTopology& endpoint)
+                    {
+                        return endpoint.direction
+                                == rtos::messaging::PortDirection::subscriber
+                            && endpoint.routingId == routed.routingId;
+                    }
+                ));
+            }
+            auto& counters = traffic_[routed.messageName];
+            if (subscriberCount == 0) {
+                ++counters.messagesWithoutSubscribers;
+                ++dispatch.messagesWithoutSubscribers;
+            } else {
+                ++counters.messagesDispatched;
+                counters.messagesReceived += subscriberCount;
+                ++dispatch.messagesDispatched;
+                dispatch.callbacksInvoked += subscriberCount;
+            }
+            for (auto& process : processes_) {
+                static_cast<void>(process->deliver(routed));
+            }
+        }
+
+        for (auto& process : processes_) {
+            auto reply = process->dispatch();
+            for (auto& deferred : reply.messages) {
+                deferredMessages_.push_back(std::move(deferred));
+            }
+        }
 
         std::ostringstream message;
-        message << "frame=" << frame_
+        message << "frame=" << frame
                 << " processed=" << dispatch.messagesProcessed()
                 << " callbacks=" << dispatch.callbacksInvoked;
         logger_.log(
@@ -319,35 +403,35 @@ private:
         startSimulation();
     }
 
-    [[nodiscard]] bool modelsAreRunning() const
+    [[nodiscard]] bool modelsAreRunning()
     {
         std::scoped_lock lock{simulationMutex_};
-        if (!initialized_ || runner_.size() == 0) {
+        if (!initialized_ || processes_.empty()) {
             return false;
         }
-        const auto statuses = runner_.statuses();
         return std::ranges::all_of(
-            statuses,
-            [](const rtos::model::ModelStatusReport& report)
+            processes_,
+            [](const std::unique_ptr<rtos::host::ModelProcess>& process)
             {
-                return report.status == rtos::model::ControlStatus::running;
+                return process->status().status == rtos::model::ControlStatus::running;
             }
         );
     }
 
-    void printStatuses() const
+    void printStatuses()
     {
         std::scoped_lock lock{simulationMutex_};
-        const auto reports = runner_.statuses();
         for (const auto& configuredModel : configuration_.models()) {
-            const auto report = std::ranges::find(
-                reports,
-                configuredModel.name,
-                &rtos::model::ModelStatusReport::name
+            const auto process = std::ranges::find_if(
+                processes_,
+                [&configuredModel](const auto& candidate)
+                {
+                    return candidate->name() == configuredModel.name;
+                }
             );
-            const auto status = report == reports.end()
+            const auto status = process == processes_.end()
                 ? rtos::model::ControlStatus::stopped
-                : report->status;
+                : (*process)->status().status;
             std::cout << configuredModel.name << ": "
                       << rtos::model::toString(status) << '\n';
         }
@@ -356,44 +440,44 @@ private:
     void printPorts() const
     {
         std::scoped_lock lock{simulationMutex_};
-        const auto topology = port_.portTopology();
+        constexpr int processWidth{10};
         constexpr int numberWidth{8};
         constexpr int nameWidth{24};
         constexpr int messageWidth{18};
-        constexpr int connectionWidth{16};
+        constexpr int transportWidth{14};
+        constexpr int routingWidth{12};
 
-        std::cout << "ROS Messaging Ports — bus " << port_.name()
-                  << " (pending=" << port_.pendingMessageCount() << ")\n"
-                  << std::left << std::setw(numberWidth) << "Port #"
+        std::cout << "ROS Messaging Dispatch Ports\n"
+                  << std::left << std::setw(processWidth) << "PID"
+                  << std::setw(numberWidth) << "Port #"
                   << std::setw(nameWidth) << "Name"
                   << std::setw(messageWidth) << "Message"
-                  << std::setw(connectionWidth) << "Publishers"
-                  << std::setw(connectionWidth) << "Subscribers" << '\n'
+                  << std::setw(transportWidth) << "Transport"
+                  << std::setw(routingWidth) << "Routing ID" << '\n'
                   << std::string(
-                         numberWidth + nameWidth + messageWidth + connectionWidth * 2,
+                         processWidth + numberWidth + nameWidth + messageWidth
+                             + transportWidth + routingWidth,
                          '-'
                      )
                   << '\n';
 
-        for (const auto& endpoint : topology) {
-            std::cout << std::left << std::setw(numberWidth) << endpoint.number
-                      << std::setw(nameWidth) << endpoint.name
-                      << std::setw(messageWidth) << endpoint.messageName
-                      << std::setw(connectionWidth) << formatPortNumbers(
-                             endpoint.publisherPorts
-                         )
-                      << std::setw(connectionWidth) << formatPortNumbers(
-                             endpoint.subscriberPorts
-                         )
-                      << '\n';
+        for (const auto& process : processes_) {
+            for (const auto& endpoint : process->topology()) {
+                std::cout << std::left << std::setw(processWidth) << process->processId()
+                          << std::setw(numberWidth) << endpoint.number
+                          << std::setw(nameWidth) << endpoint.name
+                          << std::setw(messageWidth) << endpoint.messageName
+                          << std::setw(transportWidth)
+                          << rtos::messaging::toString(endpoint.transport)
+                          << std::setw(routingWidth) << endpoint.routingId << '\n';
+            }
         }
     }
 
     void printMessages() const
     {
         std::scoped_lock lock{simulationMutex_};
-        const auto traffic = port_.messageTraffic();
-        if (traffic.empty()) {
+        if (traffic_.empty()) {
             std::cout << "No messages have been registered or sent.\n";
             return;
         }
@@ -411,7 +495,8 @@ private:
                   << std::setw(countWidth) << "Unhandled" << '\n'
                   << std::string(messageWidth + countWidth * 6, '-') << '\n';
 
-        for (const auto& message : traffic) {
+        for (const auto& [ignoredName, message] : traffic_) {
+            static_cast<void>(ignoredName);
             std::cout << std::left << std::setw(messageWidth) << message.messageName
                       << std::right << std::setw(countWidth) << message.publishers
                       << std::setw(countWidth) << message.subscribers
@@ -447,23 +532,32 @@ private:
         }
     }
 
-    void createConfiguredModels()
+    void launchModelProcesses()
     {
-        const auto& sensorConfig = requireModelConfig("SensorModel");
-        const auto& controlConfig = requireModelConfig("ControlModel");
-        const auto& motorConfig = requireModelConfig("MotorModel");
-
-        if (sensorConfig.enabled) {
-            sensor_ = std::make_unique<rtos::models::SensorModel>(port_, logger_);
-            runner_.add("SensorModel", *sensor_);
+        if (!processes_.empty()) {
+            return;
         }
-        if (controlConfig.enabled) {
-            control_ = std::make_unique<rtos::models::ControlModel>(port_, logger_);
-            runner_.add("ControlModel", *control_);
-        }
-        if (motorConfig.enabled) {
-            motor_ = std::make_unique<rtos::models::MotorModel>(port_, logger_);
-            runner_.add("MotorModel", *motor_);
+        traffic_.clear();
+        deferredMessages_.clear();
+        for (const auto& model : configuration_.models()) {
+            if (!model.enabled) {
+                continue;
+            }
+            processes_.push_back(rtos::host::ModelProcess::launch(
+                model.name,
+                loggingOptions_.level,
+                loggingOptions_.enabled,
+                model.debugEnabled
+            ));
+            for (const auto& endpoint : processes_.back()->topology()) {
+                auto& counters = traffic_[endpoint.messageName];
+                counters.messageName = endpoint.messageName;
+                if (endpoint.direction == rtos::messaging::PortDirection::publisher) {
+                    ++counters.publishers;
+                } else {
+                    ++counters.subscribers;
+                }
+            }
         }
     }
 
@@ -531,7 +625,7 @@ private:
             return;
         }
 #if defined(__unix__) || defined(__APPLE__)
-        const std::string processId = std::to_string(::getpid());
+        const std::string processId = modelProcessId(model);
         const std::string title = "GDB - " + model.name;
         char* arguments[]{
             const_cast<char*>("xterm"),
@@ -570,18 +664,20 @@ private:
 #endif
     }
 
-    [[nodiscard]] static std::string modelProcessId(
+    [[nodiscard]] std::string modelProcessId(
         const rtos::model::ModelConfig& model
-    )
+    ) const
     {
         if (!model.enabled) {
             return "-";
         }
-#if defined(__unix__) || defined(__APPLE__)
-        return std::to_string(::getpid());
-#else
-        return "shared";
-#endif
+        const auto process = std::ranges::find_if(
+            processes_,
+            [&model](const auto& candidate) { return candidate->name() == model.name; }
+        );
+        return process == processes_.end()
+            ? "pending"
+            : std::to_string((*process)->processId());
     }
 
     static std::optional<std::size_t> parseFrameCount(const std::string& command)
@@ -603,32 +699,17 @@ private:
         return frameCount;
     }
 
-    static std::string formatPortNumbers(const std::vector<std::size_t>& ports)
-    {
-        if (ports.empty()) {
-            return "-";
-        }
-
-        std::ostringstream output;
-        for (std::size_t index = 0; index < ports.size(); ++index) {
-            if (index != 0) {
-                output << ',';
-            }
-            output << ports[index];
-        }
-        return output.str();
-    }
-
     rtos::logging::Logger logger_;
-    rtos::messaging::DispatchPort port_;
     rtos::model::ModelConfiguration configuration_;
-    std::unique_ptr<rtos::models::SensorModel> sensor_;
-    std::unique_ptr<rtos::models::ControlModel> control_;
-    std::unique_ptr<rtos::models::MotorModel> motor_;
-    rtos::model::ModelRunner runner_;
+    LoggingOptions loggingOptions_;
+    std::vector<std::unique_ptr<rtos::host::ModelProcess>> processes_;
+    std::unordered_map<std::string, rtos::messaging::MessageTraffic> traffic_;
+    std::vector<rtos::messaging::TransportMessage> deferredMessages_;
+    rtos::simulation::SimulatorCore& core_{rtos::simulation::SimulatorCore::instance()};
     mutable std::mutex simulationMutex_;
     bool initialized_{};
-    std::size_t frame_{};
+    std::chrono::nanoseconds framePeriod_;
+    std::optional<std::size_t> startupFrameCount_;
     std::jthread worker_;
     std::unordered_set<std::string> launchedDebuggers_;
     bool debuggerAttachmentEnabled_{};
@@ -649,6 +730,31 @@ std::optional<ProcessOptions> parseOptions(const int argc, char* argv[])
             options.logging.enabled = false;
         } else if (option == "--models" && index + 1 < argc) {
             options.modelConfiguration = argv[++index];
+        } else if (option == "--frames" && index + 1 < argc) {
+            std::size_t frameCount{};
+            const std::string_view value{argv[++index]};
+            const auto result = std::from_chars(
+                value.data(), value.data() + value.size(), frameCount
+            );
+            if (result.ec != std::errc{} || result.ptr != value.end() || frameCount == 0) {
+                std::cerr << "--frames accepts only a positive frame count.\n";
+                return std::nullopt;
+            }
+            options.frameCount = frameCount;
+        } else if (option == "--frame-rate" && index + 1 < argc) {
+            std::uint64_t frameRate{};
+            const std::string_view value{argv[++index]};
+            const auto result = std::from_chars(
+                value.data(), value.data() + value.size(), frameRate
+            );
+            if (
+                result.ec != std::errc{} || result.ptr != value.end()
+                || frameRate == 0 || frameRate > 1'000'000'000
+            ) {
+                std::cerr << "--frame-rate accepts an integer from 1 to 1000000000.\n";
+                return std::nullopt;
+            }
+            options.framePeriod = std::chrono::nanoseconds{1'000'000'000 / frameRate};
         } else {
             std::cerr << "Unknown option: " << option << "\n"
                       << "Run rtos_sim --help for usage.\n";
@@ -679,7 +785,7 @@ int main(const int argc, char* argv[])
         auto configuration = rtos::model::ModelConfiguration::load(
             options->modelConfiguration
         );
-        return SimulatorCli{options->logging, std::move(configuration)}.run();
+        return SimulatorCli{std::move(*options), std::move(configuration)}.run();
     } catch (const std::exception& error) {
         std::cerr << "Configuration error: " << error.what() << '\n';
         return 1;

@@ -23,3 +23,9 @@ Every lifecycle operation returns a `ControlStatus`. Initialization and freeze
 return `STOPPED`, begin and active operation return `RUNNING`, and teardown
 returns `TERMINATED`. `ModelRunner` aggregates these results so host and RTOS
 execution environments can report every model's current state.
+
+`BaseModel::currentFrame()` and `BaseModel::clockTime()` expose the shared frame
+counter and monotonic simulation clock mirrored into the model worker by the host
+coordinator. The host simulation core is the only authoritative owner allowed to
+advance frames or control time, keeping all process-local model views consistent
+at each dispatch boundary.

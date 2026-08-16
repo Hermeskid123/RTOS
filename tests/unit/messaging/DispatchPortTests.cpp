@@ -323,6 +323,8 @@ TEST_CASE("named ports receive numbers and report publisher subscriber topology"
     REQUIRE(receivedRpm == 2200);
     REQUIRE(topology.size() == 2);
     REQUIRE(topology[0].name == "MotorCommand_port");
+    REQUIRE(topology[0].routingId == MotorCommand::defaultRoutingId);
+    REQUIRE(topology[0].transport == rtos::messaging::TransportType::inProcess);
     REQUIRE(topology[0].subscriberPorts == std::vector<std::size_t>({2}));
     REQUIRE(topology[0].publisherPorts.empty());
     REQUIRE(topology[1].publisherPorts == std::vector<std::size_t>({1}));
@@ -332,4 +334,47 @@ TEST_CASE("named ports receive numbers and report publisher subscriber topology"
     REQUIRE(traffic.size() == 1);
     REQUIRE(traffic[0].publishers == 1);
     REQUIRE(traffic[0].messagesReceived == 1);
+}
+
+TEST_CASE("IPC dispatch ports route using message defaults and explicit overrides")
+{
+    class CapturingTransport final : public rtos::messaging::MessageTransport {
+    public:
+        void send(rtos::messaging::TransportMessage message) override
+        {
+            messages.push_back(std::move(message));
+        }
+
+        std::vector<rtos::messaging::TransportMessage> messages;
+    } transport;
+
+    rtos::messaging::DispatchPort publisher{
+        "control",
+        rtos::messaging::TransportType::interProcess,
+        &transport
+    };
+    rtos::messaging::DispatchPort subscriber{"motor"};
+    auto output = publisher.createPort<MotorCommand>(
+        "command.out", rtos::messaging::PortDirection::publisher
+    );
+    auto input = subscriber.createPort<MotorCommand>(
+        "command.in", rtos::messaging::PortDirection::subscriber
+    );
+    int receivedRpm{};
+    input.subscribe<MotorCommand>(
+        [&receivedRpm](const MotorCommand& command) { receivedRpm = command.targetRpm; }
+    );
+
+    output.send(MotorCommand{2400});
+    REQUIRE(transport.messages.size() == 1);
+    REQUIRE(transport.messages[0].routingId == MotorCommand::defaultRoutingId);
+    REQUIRE(subscriber.receive(transport.messages[0]));
+    subscriber.dispatchAll();
+    REQUIRE(receivedRpm == 2400);
+
+    auto alternate = publisher.createPort<MotorStatus>(
+        "status.out", rtos::messaging::PortDirection::publisher, 9000
+    );
+    alternate.send(MotorStatus{2100});
+    REQUIRE(transport.messages.back().routingId == 9000);
 }

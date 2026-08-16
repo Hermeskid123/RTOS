@@ -19,6 +19,8 @@ add_library(rtos_framework
     src/messaging/SubscriptionRegistry.cpp
     src/model/ModelRunner.cpp
     src/model/ModelConfiguration.cpp
+    src/simulation/SimulationClock.cpp
+    src/simulation/SimulatorCore.cpp
 )
 add_library(rtos::framework ALIAS rtos_framework)
 
@@ -39,9 +41,23 @@ elseif(MSVC)
     target_compile_options(rtos_framework PRIVATE /W4 /permissive-)
 endif()
 
+add_library(rtos_host_process apps/rtos_sim/ModelProcess.cpp)
+target_compile_features(rtos_host_process PUBLIC cxx_std_20)
+target_include_directories(
+    rtos_host_process
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+)
+target_link_libraries(rtos_host_process PUBLIC rtos::framework)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(rtos_host_process PRIVATE -Wall -Wextra -Wpedantic)
+elseif(MSVC)
+    target_compile_options(rtos_host_process PRIVATE /W4 /permissive-)
+endif()
+
 add_executable(rtos_sim apps/rtos_sim/main.cpp)
 target_compile_features(rtos_sim PRIVATE cxx_std_20)
-target_link_libraries(rtos_sim PRIVATE rtos::framework)
+target_link_libraries(rtos_sim PRIVATE rtos::framework rtos_host_process)
 
 configure_file(
     xml/models.xml

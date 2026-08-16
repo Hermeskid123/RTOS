@@ -15,16 +15,14 @@ Choose another file with `./run --models <file>`.
 - `enabled` controls whether the simulator constructs and schedules the model.
 - `debug` permits DEBUG records from that model when the process is launched
   with `--debug`.
-- `gdb` launches `xterm -e gdb -p <pid>` when the simulator starts. A model is
-  an object inside `rtos_sim`, not a separate process, so each configured model
-  uses the shared simulator PID. The xterm title identifies the requested model.
+- `gdb` launches `xterm -e gdb -p <pid>` for that model's dedicated worker PID
+  when the simulator starts. The xterm title identifies the requested model.
 
 Host builds include GDB symbols by default through
 `RTOS_ENABLE_DEBUG_SYMBOLS=ON`. On Linux, any enabled model with `debug="true"`
-or `gdb="true"` causes `rtos_sim` to become dumpable and call
+or `gdb="true"` enables debugger attachment. Linux workers call
 `prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY)`, allowing the xterm GDB process to
-attach under the normal Yama `ptrace_scope=1` policy. This deliberately relaxes
-same-user debugger attachment for that simulator process only.
+attach under the normal Yama `ptrace_scope=1` policy.
 
 The interactive `models` command displays the loaded values. Disabled models do
 not create message ports and are not added to `ModelRunner`.

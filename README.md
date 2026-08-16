@@ -2,13 +2,15 @@
 
 A host-testable C++20 foundation for exploring RTOS models, scheduling, and the
 project's ROS Messaging publish/subscribe architecture. The framework includes
-the Milestone 4 model lifecycle, status-reporting runner, example models, and
-strongly typed deferred publish/subscribe routing.
+the model lifecycle, status-reporting runner, frame-based host simulator, shared
+simulation clock, example models, and strongly typed deferred publish/subscribe
+routing.
 
 ## Requirements
 
 - CMake 3.20 or newer
 - A C++20 compiler
+- A POSIX host with `fork()` and pipes for multi-process simulation
 
 No network access or third-party downloads are required.
 
@@ -39,9 +41,11 @@ compatibility wrapper around `./build`.
 ./.build/rtos_sim
 ./.build/rtos_sim --help
 ./run --debug
+./run --frames 100 --frame-rate 50
 ```
 
-The simulator starts an interactive shell. Common commands are:
+The simulator starts one coordinator process and a separate worker PID with its
+own IPC dispatch port for every enabled model. The interactive shell supports:
 
 ```text
 start
@@ -55,7 +59,9 @@ quit
 
 The interactive `run` command starts continuous execution on a background
 worker, leaving the prompt available for `status`, `ports`, `messages`, `stop
-models`, and `stop sim`. Use `run <frames>` for a fixed run.
+models`, and `stop sim`. Use `run <frames>` for an interactive fixed run, or
+launch with `--frames <count>` for a fixed run that exits automatically. The
+`--frame-rate <hz>` option controls frame pacing and defaults to 100 Hz.
 
 Logging is configured when launching the executable. `./run` prints `ERROR` and
 `FATAL` records by default, `./run --info` and `./run --debug` increase

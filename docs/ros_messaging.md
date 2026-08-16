@@ -67,7 +67,9 @@ Callers may ignore the report when routing diagnostics are not needed.
 - `rtos::messages::SensorData` carries a host-simulation sensor value.
 
 The current implementation is single-threaded and uses dynamic allocation for
-host development. Subscription lifetime and bounded embedded storage are planned
+each process and uses dynamic allocation for host development. The host simulator
+runs models in separate processes and connects their dispatch ports through an
+IPC transport. Subscription lifetime and bounded embedded storage are planned
 for later milestones. ROS Messaging is an internal name and does not imply
 compatibility with ROS 1 or ROS 2.
 
@@ -94,4 +96,16 @@ auto commandPort = dispatchPort.createPort<MotorCommand>(
 Each endpoint receives a sequential port number. `portTopology()` reports its
 name, number, message type, publisher port numbers, and subscriber port numbers.
 Publisher/subscriber relationships are derived by matching message types. The
-CLI `ports` command displays this topology even before the simulation starts.
+CLI `ports` command displays the worker topology after `start sim`.
+
+## Transport And Routing
+
+Every dispatch port reports a `TransportType`: `IN_PROCESS` for local unit-test
+and embedded-style routing, or `IPC` for host model workers. Transport envelopes
+carry a `RoutingId`, message name, and byte payload. Endpoint routing defaults to
+the message type's `defaultRoutingId`; callers may pass an explicit third
+argument to `createPort<Message>()` to override it.
+
+The project message defaults are `SensorData=1001`, `MotorCommand=1002`, and
+`MotorStatus=1003`. The CLI `ports` command displays the worker PID, transport,
+and routing ID for every endpoint.

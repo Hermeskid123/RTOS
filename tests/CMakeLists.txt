@@ -5,13 +5,15 @@ set(RTOS_UNIT_TEST_SOURCES
     unit/messaging/SubscriptionRegistryTests.cpp
     unit/model/ModelFrameworkTests.cpp
     unit/model/ModelConfigurationTests.cpp
+    unit/simulation/SimulatorCoreTests.cpp
+    integration/ModelProcessTests.cpp
 )
 
 add_executable(rtos_unit_tests TestMain.cpp ${RTOS_UNIT_TEST_SOURCES})
 
 target_compile_features(rtos_unit_tests PRIVATE cxx_std_20)
 target_include_directories(rtos_unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(rtos_unit_tests PRIVATE rtos::framework)
+target_link_libraries(rtos_unit_tests PRIVATE rtos::framework rtos_host_process)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(rtos_unit_tests PRIVATE -Wall -Wextra -Wpedantic)
