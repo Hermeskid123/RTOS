@@ -1,0 +1,39 @@
+#pragma once
+
+#include <chrono>
+#include <mutex>
+
+namespace rtos::simulation {
+
+class SimulatorCore;
+
+class SimulationClock final {
+public:
+    using clock_type = std::chrono::steady_clock;
+    using duration = clock_type::duration;
+
+    SimulationClock(const SimulationClock&) = delete;
+    SimulationClock& operator=(const SimulationClock&) = delete;
+    SimulationClock(SimulationClock&&) = delete;
+    SimulationClock& operator=(SimulationClock&&) = delete;
+
+    [[nodiscard]] duration elapsed() const;
+    [[nodiscard]] bool isRunning() const;
+
+private:
+    friend class SimulatorCore;
+
+    SimulationClock() = default;
+
+    void start();
+    void stop();
+    void reset();
+    void synchronize(duration elapsed);
+
+    mutable std::mutex mutex_;
+    clock_type::time_point startedAt_{};
+    duration elapsedBeforeStart_{};
+    bool running_{};
+};
+
+}  // namespace rtos::simulation
