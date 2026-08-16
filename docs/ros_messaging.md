@@ -1,5 +1,72 @@
 # ROS Messaging
 
-ROS Messaging will provide deferred, strongly typed publish/subscribe delivery.
-Its `DispatchPort` API begins in Milestone 2. ROS Messaging is an internal name
-and does not imply compatibility with ROS 1 or ROS 2.
+ROS Messaging provides deferred, strongly typed publish/subscribe delivery
+through `rtos::messaging::DispatchPort`.
+
+```cpp
+#include "messages/MotorCommand.hpp"
+#include "rtos/messaging/DispatchPort.hpp"
+
+rtos::messaging::DispatchPort port;
+
+port.subscribe<rtos::messages::MotorCommand>(
+    [](const rtos::messages::MotorCommand& command)
+    {
+        // Process the command during dispatch.
+    }
+);
+
+port.send(rtos::messages::MotorCommand{1500});
+const auto report = port.dispatchAll();
+```
+
+`send()` owns a copy or moved instance of the message and never invokes callbacks.
+`dispatchAll()` routes the current batch to every subscriber registered for the
+exact C++ message type. Messages published by a callback remain queued until the
+next call to `dispatchAll()`.
+
+## Dispatch Semantics
+
+- Messages are delivered in publication order.
+- Subscribers for a type are invoked in registration order.
+- Each message is delivered once to every matching subscriber.
+- Messages with no matching subscriber are discarded during dispatch.
+- An empty dispatch has no effect.
+- A nested `dispatchAll()` call from a callback has no effect, so messages sent
+  from callbacks cannot cross the current dispatch boundary.
+
+## Subscription Registry
+
+`DispatchPort` owns a `SubscriptionRegistry` that maps exact C++ message types to
+their callbacks. Multiple callbacks may be registered for the same message type.
+The current number of callbacks for a type can be queried when needed:
+
+```cpp
+const auto motorSubscribers =
+    port.subscriberCount<rtos::messages::MotorCommand>();
+```
+
+Subscription removal is intentionally deferred to the subscription-lifetime
+milestone.
+
+## Dispatch Reports
+
+Each call to `dispatchAll()` returns a `DispatchReport` containing:
+
+- `messagesDispatched` — messages that had at least one matching subscriber;
+- `callbacksInvoked` — total callbacks invoked across all messages;
+- `messagesWithoutSubscribers` — messages discarded without delivery;
+- `messagesProcessed()` — total handled and unhandled messages in the batch.
+
+Callers may ignore the report when routing diagnostics are not needed.
+
+## Project Messages
+
+- `rtos::messages::MotorCommand` requests a target motor RPM.
+- `rtos::messages::MotorStatus` reports the current motor RPM.
+- `rtos::messages::SensorData` carries a host-simulation sensor value.
+
+The current implementation is single-threaded and uses dynamic allocation for
+host development. Subscription lifetime and bounded embedded storage are planned
+for later milestones. ROS Messaging is an internal name and does not imply
+compatibility with ROS 1 or ROS 2.

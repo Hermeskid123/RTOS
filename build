@@ -7,6 +7,7 @@ build_dir="${BUILD_DIR:-${project_root}/.build}"
 build_type="${BUILD_TYPE:-Debug}"
 action="build"
 jobs=""
+run_tests=false
 cmake_arguments=()
 
 while (($# > 0)); do
@@ -25,6 +26,10 @@ while (($# > 0)); do
             ;;
         -j[0-9]*)
             jobs="${1#-j}"
+            shift
+            ;;
+        --test)
+            run_tests=true
             shift
             ;;
         *)
@@ -52,11 +57,16 @@ case "${action}" in
         echo "Removed ${build_dir}."
         ;;
     build)
+        test_option=OFF
+        if [[ "${run_tests}" == true ]]; then
+            test_option=ON
+        fi
+
         cmake \
             -S "${project_root}" \
             -B "${build_dir}" \
             -DCMAKE_BUILD_TYPE="${build_type}" \
-            -DRTOS_BUILD_TESTS=ON \
+            -DRTOS_BUILD_TESTS="${test_option}" \
             "${cmake_arguments[@]}"
 
         build_arguments=(--parallel)
@@ -65,6 +75,8 @@ case "${action}" in
         fi
 
         cmake --build "${build_dir}" "${build_arguments[@]}"
-        ctest --test-dir "${build_dir}" --output-on-failure
+        if [[ "${run_tests}" == true ]]; then
+            ctest --test-dir "${build_dir}" --output-on-failure
+        fi
         ;;
 esac

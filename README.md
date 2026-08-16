@@ -2,7 +2,8 @@
 
 A host-testable C++20 foundation for exploring RTOS models, scheduling, and the
 project's ROS Messaging publish/subscribe architecture. The framework currently
-implements Milestone 1 from [`Project.md`](Project.md).
+implements Milestones 1–3 from [`Project.md`](Project.md), including strongly
+typed deferred publish/subscribe routing.
 
 ## Requirements
 
@@ -17,10 +18,12 @@ No network access or third-party downloads are required.
 ./build
 ```
 
-The build command configures a Debug build in `.build`, compiles it in parallel,
-and runs all tests. It also supports cleanup and explicit parallelism:
+The build command configures a Debug build in `.build` and compiles it in
+parallel. Pass `--test` to compile and execute the unit-test cases:
 
 ```bash
+./build --test
+./build --test -j40
 ./build clean
 ./build clobber
 ./build -j40
@@ -51,8 +54,13 @@ and forwards optional simulator arguments:
 ctest --test-dir .build --output-on-failure
 ```
 
-Tests use a small repository-local harness registered with CTest, keeping the
-foundation dependency-free and suitable for offline development.
+Tests live under `tests/unit/` and use a small repository-local harness registered
+with CTest, keeping the project dependency-free and suitable for offline
+development. The standard test command is:
+
+```bash
+./build --test
+```
 
 ## Layout
 
@@ -64,3 +72,15 @@ foundation dependency-free and suitable for offline development.
 - `platforms/` — host and RTOS adapters
 - `tests/` — unit and integration tests
 - `docs/` — architecture and subsystem documentation
+
+## ROS Messaging
+
+`rtos::messaging::DispatchPort` accepts strongly typed messages through `send()`
+and routes them to callbacks registered through `subscribe<Message>()` when
+`dispatchAll()` is called. The current host implementation supports multiple
+message types and multiple subscribers while preserving a deterministic dispatch
+boundary. Per-type subscriber counts and per-cycle dispatch reports make routing
+and no-subscriber behavior observable.
+
+Concrete project messages are defined in `messages/`. See
+[`docs/ros_messaging.md`](docs/ros_messaging.md) for API semantics and examples.

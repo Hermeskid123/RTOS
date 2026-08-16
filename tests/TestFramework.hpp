@@ -64,6 +64,30 @@ inline int runAll()
     return failures == 0 ? 0 : 1;
 }
 
+inline int runNamed(const std::string_view requestedName)
+{
+    for (const auto& testCase : registry()) {
+        if (testCase.name != requestedName) {
+            continue;
+        }
+
+        try {
+            testCase.function();
+            std::cout << "[PASS] " << testCase.name << '\n';
+            return 0;
+        } catch (const std::exception& error) {
+            std::cerr << "[FAIL] " << testCase.name << ": " << error.what() << '\n';
+            return 1;
+        } catch (...) {
+            std::cerr << "[FAIL] " << testCase.name << ": unknown exception\n";
+            return 1;
+        }
+    }
+
+    std::cerr << "Unknown test case: " << requestedName << '\n';
+    return 2;
+}
+
 }  // namespace test
 
 #define RTOS_TEST_JOIN_IMPL(left, right) left##right
