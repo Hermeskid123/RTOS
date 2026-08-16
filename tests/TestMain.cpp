@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Defines TestMain coverage for the RTOS framework test suite.
+ */
+
 #include "TestFramework.hpp"
 
 int main(const int argc, char* argv[])

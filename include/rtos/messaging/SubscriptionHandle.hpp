@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public SubscriptionHandle framework API.
+ */
+
 #pragma once
 
 #include <cstddef>

@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the ControlModel example application model.
+ */
+
 #include "models/ControlModel/ControlModel.hpp"
 
 #include "messages/MotorCommand.hpp"

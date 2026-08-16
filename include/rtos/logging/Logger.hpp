@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public Logger framework API.
+ */
+
 #pragma once
 
 #include <iosfwd>

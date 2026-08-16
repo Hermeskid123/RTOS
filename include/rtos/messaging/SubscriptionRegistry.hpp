@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public SubscriptionRegistry framework API.
+ */
+
 #pragma once
 
 #include "rtos/messaging/SubscriptionHandle.hpp"

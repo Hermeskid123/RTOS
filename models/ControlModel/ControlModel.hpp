@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the ControlModel example application model.
+ */
+
 #pragma once
 
 #include "rtos/messaging/DispatchPort.hpp"

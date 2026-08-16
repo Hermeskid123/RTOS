@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public DispatchPort framework API.
+ */
+
 #pragma once
 
 #include "rtos/messaging/DispatchReport.hpp"

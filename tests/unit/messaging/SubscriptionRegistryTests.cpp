@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Defines SubscriptionRegistryTests coverage for the RTOS framework test suite.
+ */
+
 #include "TestFramework.hpp"
 
 #include "messages/MotorCommand.hpp"

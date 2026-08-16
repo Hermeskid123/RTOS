@@ -1,5 +1,7 @@
 # Model Configuration
 
+Release 1.0.0 uses this XML schema for host model selection and debugging.
+
 The host simulator loads model arguments from `xml/models.xml` by default.
 Choose another file with `./run --models <file>`.
 
@@ -29,3 +31,7 @@ not create message ports and are not added to `ModelRunner`.
 
 The interactive `status` command treats a model with no returned control-status
 report as `STOPPED`.
+
+The parser requires a `<models>` root, at least one `<model>`, unique non-empty
+model names, and boolean values expressed as `true`, `false`, `1`, or `0`.
+Invalid files fail startup with a descriptive exception.

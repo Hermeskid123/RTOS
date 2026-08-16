@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public PerformanceMetrics framework API.
+ */
+
 #pragma once
 
 #include <chrono>

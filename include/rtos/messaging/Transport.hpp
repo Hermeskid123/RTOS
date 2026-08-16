@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public Transport framework API.
+ */
+
 #pragma once
 
 #include <cstddef>

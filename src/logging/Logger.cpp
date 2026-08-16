@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the Logger framework API.
+ */
+
 #include "rtos/logging/Logger.hpp"
 
 #include <array>

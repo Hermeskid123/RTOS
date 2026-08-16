@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the interactive and fixed-frame host simulator.
+ */
+
 #include "apps/rtos_sim/ModelProcess.hpp"
 #include "rtos/logging/Logger.hpp"
 #include "rtos/messaging/MessageTraffic.hpp"
@@ -44,7 +49,7 @@ extern char** environ;
 
 namespace {
 
-constexpr std::string_view version{"0.2.0"};
+constexpr std::string_view version{"1.0.0"};
 
 #ifndef RTOS_DEFAULT_MODEL_CONFIG
 #define RTOS_DEFAULT_MODEL_CONFIG "xml/models.xml"

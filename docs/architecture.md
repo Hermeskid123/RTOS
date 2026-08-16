@@ -1,9 +1,8 @@
 # Architecture
 
-The framework separates application models, ROS Messaging, execution, and
-platform concerns. Milestone 1 establishes the host build and test foundation.
-Milestones 2 and 3 add deferred typed messaging and Pub/Sub routing without
-coupling models to an RTOS.
+Release 1.0.0 separates application models, ROS Messaging, execution, and
+platform concerns. The completed milestone baseline is recorded in
+[`../Release.md`](../Release.md).
 
 `rtos::simulation::SimulatorCore` is the coordinator's simulation singleton and
 source of truth for frame number and elapsed time. Each model runs in a separate
@@ -40,3 +39,9 @@ The execution layer also provides a portable `FreeRtosAdapter`. Its native
 binding creates static FreeRTOS model tasks plus a dedicated messaging task,
 while models retain the same lifecycle and messaging APIs used by the host
 simulator. See [`freertos_adapter.md`](freertos_adapter.md).
+
+## Dependency Direction
+
+Application models depend on framework interfaces, never other models or
+platform kernels. The host process adapter and native FreeRTOS binding depend on
+the framework. Platform-specific code does not flow back into model headers.

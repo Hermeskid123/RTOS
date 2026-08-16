@@ -1,5 +1,7 @@
 # Concurrency And Parallel Processing
 
+This document describes the synchronization contract shipped in release 1.0.0.
+
 The host simulator combines threads and processes while retaining one
 deterministic dispatch boundary per frame.
 
@@ -45,7 +47,8 @@ object itself; the registry and dispatch port provide the cross-thread safety.
 
 ## Message Ownership
 
-Every publication owns a copied or moved message payload before returning.
+Every publication copies its trivially-copyable payload into queue-owned inline
+storage before returning.
 Dispatch swaps the current incoming queue into a private batch, allowing
 publishers to fill the next batch concurrently. Subscription snapshots retain
 shared callback slots, while inactive slots are skipped safely.
@@ -61,3 +64,10 @@ and available hardware threads. It is an exercise-level estimate rather than an
 OS profiler replacement. Thread creation, pipe traffic, and coordinator routing
 are included in frame execution time. Use `--frames <count> --metrics` for a
 repeatable fixed run.
+
+## Thread-Safety Boundary
+
+Concurrent calls through `DispatchPort` and independent subscription handles are
+supported. Mutating one `SubscriptionHandle` object concurrently from multiple
+threads still requires caller synchronization. Model state accessed from both an
+RTOS model task and a messaging callback must likewise be protected by the model.

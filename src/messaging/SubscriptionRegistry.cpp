@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the SubscriptionRegistry framework API.
+ */
+
 #include "rtos/messaging/SubscriptionRegistry.hpp"
 
 namespace rtos::messaging {

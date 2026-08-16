@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public FreeRtosAdapter framework API.
+ */
+
 #pragma once
 
 #include "rtos/platform/freertos/FreeRtosKernel.hpp"

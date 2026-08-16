@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the SubscriptionHandle framework API.
+ */
+
 #include "rtos/messaging/SubscriptionHandle.hpp"
 
 #include <algorithm>

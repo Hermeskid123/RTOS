@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- @file models.xml Default host simulator model configuration. -->
 <models>
     <model name="SensorModel" enabled="true" debug="false" gdb="false" />
     <model name="ControlModel" enabled="true" debug="false" gdb="false" />

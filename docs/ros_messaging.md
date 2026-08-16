@@ -1,5 +1,7 @@
 # ROS Messaging
 
+This document describes the messaging contract shipped in release 1.0.0.
+
 ROS Messaging provides deferred, strongly typed publish/subscribe delivery
 through `rtos::messaging::DispatchPort`.
 
@@ -82,12 +84,11 @@ Callers may ignore the report when routing diagnostics are not needed.
 - `rtos::messages::MotorStatus` reports the current motor RPM.
 - `rtos::messages::SensorData` carries a host-simulation sensor value.
 
-The current implementation is single-threaded within each process and uses
-dynamic allocation for host development. The host simulator
-runs models in separate processes and connects their dispatch ports through an
-IPC transport. Subscription lifetime and bounded embedded storage are planned
-for later milestones. ROS Messaging is an internal name and does not imply
-compatibility with ROS 1 or ROS 2.
+The host simulator runs models in separate processes and connects their dispatch
+ports through an IPC transport. Queue operations, routing diagnostics, and
+subscription lifetime are thread-safe within the boundaries documented in
+[`concurrency.md`](concurrency.md). ROS Messaging is an internal name and does
+not imply compatibility with ROS 1 or ROS 2.
 
 Publishing, receiving, diagnostics, subscription changes, and dispatch entry are
 thread-safe. Dispatch moves the current queue into a private batch, so concurrent

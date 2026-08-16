@@ -1,5 +1,7 @@
 # FreeRTOS Adapter
 
+This is the optional native execution adapter shipped in release 1.0.0.
+
 The FreeRTOS adapter keeps application models independent of the kernel. Models
 continue to derive from `BaseModel`, use their existing lifecycle methods, and
 publish through `DispatchPort`.
@@ -66,3 +68,7 @@ storage. `stop()` requests orderly task termination; the owning firmware is
 responsible for coordinating shutdown before destroying those objects.
 An adapter is intentionally single-use: models cannot be added and tasks cannot
 be restarted after `start()` has been called.
+
+The host test suite validates adapter task creation and lifecycle behavior with a
+kernel test double. A firmware build validates the native binding against the
+selected FreeRTOS port and its `FreeRTOSConfig.h`.

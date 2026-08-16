@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public SimulatorCore framework API.
+ */
+
 #pragma once
 
 #include "rtos/simulation/FrameCounter.hpp"

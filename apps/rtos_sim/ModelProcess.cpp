@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements model worker processes and IPC serialization.
+ */
+
 #include "apps/rtos_sim/ModelProcess.hpp"
 
 #include "models/ControlModel/ControlModel.hpp"

@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Defines SimulatorCoreTests coverage for the RTOS framework test suite.
+ */
+
 #include "TestFramework.hpp"
 
 #include "rtos/model/BaseModel.hpp"

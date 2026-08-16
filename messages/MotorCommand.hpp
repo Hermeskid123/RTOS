@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the MotorCommand project message payload.
+ */
+
 #pragma once
 
 #include <cstdint>

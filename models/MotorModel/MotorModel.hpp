@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the MotorModel example application model.
+ */
+
 #pragma once
 
 #include "rtos/messaging/DispatchPort.hpp"

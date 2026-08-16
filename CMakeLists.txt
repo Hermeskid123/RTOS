@@ -1,8 +1,11 @@
+# @file CMakeLists.txt
+# @brief Configures the framework, simulator, tests, documentation, and adapters.
+
 cmake_minimum_required(VERSION 3.20)
 
 project(
     cpp_rtos
-    VERSION 0.1.0
+    VERSION 1.0.0
     DESCRIPTION "Host-testable C++ framework for RTOS models and messaging"
     LANGUAGES CXX
 )
@@ -10,8 +13,20 @@ project(
 option(RTOS_BUILD_TESTS "Build the unit tests" OFF)
 option(RTOS_ENABLE_DEBUG_SYMBOLS "Build the host framework with GDB symbols" ON)
 option(RTOS_BUILD_FREERTOS_ADAPTER "Build the native FreeRTOS kernel binding" OFF)
+option(RTOS_BUILD_DOCUMENTATION "Add the Doxygen documentation target" OFF)
 set(RTOS_FREERTOS_MAX_TASKS 17 CACHE STRING "Static FreeRTOS task slots")
 set(RTOS_FREERTOS_MAX_STACK_DEPTH 2048 CACHE STRING "Stack words per FreeRTOS task")
+
+if(RTOS_BUILD_DOCUMENTATION)
+    find_package(Doxygen REQUIRED)
+    add_custom_target(
+        rtos_docs
+        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Generating RTOS framework API documentation"
+        VERBATIM
+    )
+endif()
 
 add_library(rtos_framework
     models/ControlModel/ControlModel.cpp

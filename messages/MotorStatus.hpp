@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the MotorStatus project message payload.
+ */
+
 #pragma once
 
 #include <cstdint>

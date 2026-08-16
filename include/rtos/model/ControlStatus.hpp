@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public ControlStatus framework API.
+ */
+
 #pragma once
 
 #include <string_view>

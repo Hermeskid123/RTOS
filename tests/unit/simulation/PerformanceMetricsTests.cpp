@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Defines PerformanceMetricsTests coverage for the RTOS framework test suite.
+ */
+
 #include "TestFramework.hpp"
 
 #include "rtos/simulation/PerformanceMetrics.hpp"

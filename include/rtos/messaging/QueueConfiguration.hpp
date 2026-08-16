@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public QueueConfiguration framework API.
+ */
+
 #pragma once
 
 #include <cstddef>

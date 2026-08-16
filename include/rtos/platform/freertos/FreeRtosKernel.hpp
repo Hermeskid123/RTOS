@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the public FreeRtosKernel framework API.
+ */
+
 #pragma once
 
 #include <cstdint>

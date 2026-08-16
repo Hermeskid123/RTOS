@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the PerformanceMetrics framework API.
+ */
+
 #include "rtos/simulation/PerformanceMetrics.hpp"
 
 #include <algorithm>

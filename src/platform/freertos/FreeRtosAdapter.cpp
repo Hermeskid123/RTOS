@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the FreeRtosAdapter framework API.
+ */
+
 #include "rtos/platform/freertos/FreeRtosAdapter.hpp"
 
 #include "rtos/messaging/DispatchPort.hpp"

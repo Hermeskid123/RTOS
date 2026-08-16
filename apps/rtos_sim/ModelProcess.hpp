@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the host model worker process interface.
+ */
+
 #pragma once
 
 #include "rtos/logging/Logger.hpp"

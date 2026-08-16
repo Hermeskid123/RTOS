@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the native FreeRTOS kernel binding.
+ */
+
 #include "platforms/freertos/NativeFreeRtosKernel.hpp"
 
 #include <algorithm>

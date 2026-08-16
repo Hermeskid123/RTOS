@@ -1,5 +1,7 @@
 # C++ RTOS Model Framework
 
+**Current release:** 1.0.0 — see [`Release.md`](Release.md).
+
 A host-testable C++20 foundation for exploring RTOS models, scheduling, and the
 project's ROS Messaging publish/subscribe architecture. The framework includes
 the model lifecycle, status-reporting runner, frame-based host simulator, shared
@@ -43,6 +45,13 @@ Set `BUILD_DIR` or `BUILD_TYPE` to override their defaults. Additional arguments
 are forwarded to the CMake configure command. `scripts/build.sh` remains as a
 compatibility wrapper around `./build`.
 
+Generate API documentation when Doxygen is installed:
+
+```bash
+cmake -S . -B .build-docs -DRTOS_BUILD_DOCUMENTATION=ON
+cmake --build .build-docs --target rtos_docs
+```
+
 ## Run
 
 ```bash
@@ -58,9 +67,14 @@ own IPC dispatch port for every enabled model. The interactive shell supports:
 
 ```text
 start
+start sim
+start models
+run [frames]
 status
 ports
 messages
+metrics
+models
 stop models
 stop sim
 quit
@@ -142,3 +156,12 @@ Concrete project messages are defined in `messages/`. See
 See [`docs/bounded_messaging.md`](docs/bounded_messaging.md) for bounded queue
 configuration and [`docs/freertos_adapter.md`](docs/freertos_adapter.md) for the
 optional native FreeRTOS execution target.
+
+## Documentation
+
+- [`Project.md`](Project.md) — active product and architecture specification
+- [`Release.md`](Release.md) — completed 1.0.0 milestones and acceptance evidence
+- [`docs/architecture.md`](docs/architecture.md) — subsystem relationships
+- [`docs/model_specification.md`](docs/model_specification.md) — model lifecycle
+- [`docs/ros_messaging.md`](docs/ros_messaging.md) — messaging API and routing
+- [`docs/concurrency.md`](docs/concurrency.md) — synchronization and metrics

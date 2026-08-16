@@ -1,5 +1,7 @@
 # Bounded Messaging
 
+This is the bounded-storage contract shipped in release 1.0.0.
+
 `DispatchPort` owns two fixed-capacity queue buffers: an incoming queue and the
 current dispatch batch. Both buffers reserve their complete capacity when the
 port is constructed. Each queue entry stores its payload in an aligned inline
@@ -41,3 +43,10 @@ The subscription registry and host IPC envelopes still use host-oriented STL
 storage. The bounded queue removes per-message payload allocation and establishes
 the size/depth contract used by the FreeRTOS adapter; later embedded milestones
 can replace subscription setup and transport envelopes without changing models.
+
+## Determinism Notes
+
+Queue memory is reserved during port construction. `dropOldest` performs a
+bounded shift proportional to configured depth; the other full policies return
+without moving queued entries. Host subscription and IPC setup may still use
+dynamic allocation, as listed in the 1.0.0 compatibility limits.

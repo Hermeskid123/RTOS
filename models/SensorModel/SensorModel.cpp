@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the SensorModel example application model.
+ */
+
 #include "models/SensorModel/SensorModel.hpp"
 
 #include "messages/SensorData.hpp"

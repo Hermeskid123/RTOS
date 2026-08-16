@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Defines ModelProcessTests coverage for the RTOS framework test suite.
+ */
+
 #include "TestFramework.hpp"
 
 #include "apps/rtos_sim/ModelProcess.hpp"

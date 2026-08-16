@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Implements the DispatchPort framework API.
+ */
+
 #include "rtos/messaging/DispatchPort.hpp"
 
 #include <algorithm>

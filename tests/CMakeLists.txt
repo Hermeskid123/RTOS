@@ -1,3 +1,6 @@
+# @file tests/CMakeLists.txt
+# @brief Registers every repository-local unit and integration test with CTest.
+
 set(RTOS_UNIT_TEST_SOURCES
     unit/logging/LoggerTests.cpp
     unit/messaging/DispatchPortTests.cpp

@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Declares the native FreeRTOS kernel binding.
+ */
+
 #pragma once
 
 #include "rtos/platform/freertos/FreeRtosKernel.hpp"

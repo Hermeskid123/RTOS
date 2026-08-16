@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief Defines TestFramework coverage for the RTOS framework test suite.
+ */
+
 #pragma once
 
 #include <exception>

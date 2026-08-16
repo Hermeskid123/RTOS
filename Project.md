@@ -1,5 +1,9 @@
 # C++ RTOS Model Framework & ROS Messaging Specification
 
+**Specification Version:** 1.0.0
+
+**Release Record:** [`Release.md`](Release.md)
+
 **Stack:** C++20, RTOS-compatible C++, STL-compatible abstractions where appropriate, CMake, host-based unit testing, optional FreeRTOS integration
 
 **Execution Environment:** Fully local (no cloud dependencies)
@@ -237,11 +241,9 @@ Global messaging objects should be avoided.
 
 ### 3.1 Concurrency
 
-The initial messaging implementation may be single-threaded.
-
-Later versions shall support concurrent publishers.
-
-Thread safety shall be introduced deliberately rather than assumed.
+Release 1.0.0 supports concurrent publishers, concurrent subscription changes,
+and parallel dispatch across model workers. Thread safety is deliberate and
+limited to the boundaries documented in `docs/concurrency.md`.
 
 Potential synchronization mechanisms include:
 
@@ -565,13 +567,11 @@ public:
     SubscriptionHandle subscribe(Callback&& callback);
 
     template<typename Message>
-    void send(Message&& message);
+    SendResult send(Message&& message);
 
-    void dispatchAll();
+    DispatchReport dispatchAll();
 };
 ```
-
-Exact signatures may change during implementation.
 
 ### Publishing
 
@@ -626,9 +626,9 @@ Multiple subscribers may subscribe to the same message type.
 
 ### Subscription Lifetime
 
-The design shall eventually provide explicit subscription lifetime management.
+The design provides explicit subscription lifetime management.
 
-Preferred future usage:
+Required usage for callbacks that capture model state:
 
 ```cpp
 SubscriptionHandle subscription_;
@@ -637,7 +637,8 @@ subscription_ =
     port.subscribe<MotorCommand>(...);
 ```
 
-Destroying or resetting the handle should safely unsubscribe the callback.
+Destroying or resetting the handle safely unsubscribes the callback, including
+safe coordination with an active callback on another thread.
 
 This prevents callbacks from referencing destroyed model instances.
 
@@ -707,16 +708,18 @@ Initial usage may resemble:
 rtos_sim [options]
 ```
 
-Recommended options:
+Release 1.0.0 options:
 
 ```text
 --help
 --version
 --frames <count>
 --frame-rate <hz>
---log-level <level>
---list-models
---list-topics
+--models <file>
+--debug
+--info
+--noLogging
+--metrics
 ```
 
 Logging switches are process arguments: `rtos_sim --debug`, `rtos_sim --info`,
@@ -729,7 +732,7 @@ fixed run.
 Example:
 
 ```bash
-rtos_sim --frames 1000 --frame-rate 100 --log-level debug
+rtos_sim --frames 1000 --frame-rate 100 --debug --metrics
 ```
 
 Expected behavior:
@@ -756,346 +759,34 @@ The CLI is primarily intended as a development, simulation, debugging, and autom
 
 # 8. File Structure
 
-Recommended initial repository structure:
+The release repository is organized by responsibility:
 
 ```text
-cpp-rtos/
-│
-├── CMakeLists.txt
-├── README.md
-│
-├── docs/
-│   ├── architecture.md
-│   ├── ros_messaging.md
-│   └── model_specification.md
-│
-├── include/
-│   └── rtos/
-│       │
-│       ├── model/
-│       │   ├── BaseModel.hpp
-│       │   └── ModelRunner.hpp
-│       │
-│       ├── messaging/
-│       │   ├── DispatchPort.hpp
-│       │   ├── Subscription.hpp
-│       │   └── Message.hpp
-│       │
-│       ├── logging/
-│       │   └── Logger.hpp
-│       │
-│       └── platform/
-│           └── Platform.hpp
-│
-├── src/
-│   ├── model/
-│   ├── messaging/
-│   ├── logging/
-│   └── platform/
-│
-├── models/
-│   ├── SensorModel/
-│   ├── ControlModel/
-│   └── MotorModel/
-│
-├── messages/
-│   ├── MotorCommand.hpp
-│   ├── MotorStatus.hpp
-│   └── SensorData.hpp
-│
-├── platforms/
-│   ├── host/
-│   │   └── HostRunner.cpp
-│   │
-│   └── freertos/
-│       └── FreeRTOSModelRunner.cpp
-│
-├── apps/
-│   └── rtos_sim/
-│       └── main.cpp
-│
-└── tests/
-    ├── messaging/
-    │   ├── DispatchPortTests.cpp
-    │   └── SubscriptionTests.cpp
-    │
-    ├── models/
-    └── integration/
+RTOS/
+├── CMakeLists.txt, Doxyfile, README.md, Project.md, Release.md
+├── include/rtos/        Public framework APIs
+├── src/                 Portable framework implementations
+├── messages/            Trivially-copyable project messages
+├── models/              Example application models
+├── apps/rtos_sim/       Host CLI and worker-process adapter
+├── platforms/freertos/  Native FreeRTOS kernel binding
+├── tests/               Unit and integration coverage
+├── docs/                Architecture and subsystem guides
+├── xml/                 Host model configuration
+└── build, run, scripts/ Local developer entry points
 ```
 
-The structure should remain modular. Agents should avoid introducing unnecessary abstractions merely to conform exactly to this proposed directory layout.
+The structure shall remain modular. New platform code belongs outside application
+models, and public interfaces belong under `include/rtos/`.
 
 ---
 
-# 9. Milestones
-
-### Milestone 1 — Project Foundation
-
-Establish:
-
-* C++20 project;
-* CMake build;
-* host executable;
-* unit-test framework;
-* basic logging;
-* repository directory structure.
-
-Acceptance criteria:
-
-```text
-Project builds locally.
-Tests execute locally.
-No cloud dependency is required.
-Simple host application runs successfully.
-```
-
-### Milestone 2 — DispatchPort MVP
-
-Implement:
-
-```cpp
-send<T>()
-subscribe<T>()
-dispatchAll()
-```
-
-Support:
-
-* strongly typed messages;
-* one publisher;
-* one subscriber;
-* multiple messages;
-* deferred dispatch.
-
-Acceptance criteria:
-
-```text
-send() does not invoke callbacks immediately.
-
-dispatchAll() invokes the correct subscriber.
-
-Messages preserve their data after the original
-publisher's object goes out of scope.
-
-Messages sent during dispatch are deferred until
-the next dispatch cycle.
-```
-
-### Milestone 3 — Pub/Sub Routing
-
-Add:
-
-* multiple subscribers;
-* multiple message types;
-* subscription registry;
-* routing tests;
-* no-subscriber behavior.
-
-Test:
-
-```text
-MotorCommand
-    ├── MotorModel
-    └── LoggerModel
-
-SensorData
-    └── ControlModel
-```
-
-Each message must reach only its registered subscribers.
-
-### Milestone 4 — Model Framework
-
-Implement:
-
-```cpp
-BaseModel
-ModelRunner
-initialize()
-begin()
-freeze()
-operate()
-terminate()
-```
-
-Create example:
-
-```text
-SensorModel
-ControlModel
-MotorModel
-```
-
-Models shall communicate exclusively through ROS Messaging for inter-model communication.
-
-### Milestone 5 — Frame-Based Simulator
-
-Implement the host execution cycle:
-
-```cpp
-while (running)
-{
-    modelRunner.update();
-    rosPort.dispatchAll();
-    waitForNextFrame();
-}
-```
-
-Support configurable:
-
-```text
-frame count
-frame rate
-logging
-```
-
-Verify deterministic dispatch boundaries.
-
-The host simulator shall run each enabled model in its own worker process. The
-coordinator remains the source of truth for frame number and simulation time and
-synchronizes those values to each worker before `operate()`. Every model worker
-owns a separate `DispatchPort`; the coordinator routes transport envelopes
-between those ports at the frame dispatch boundary.
-
-Every model endpoint declares a transport type and routing ID. A message type
-shall define `defaultRoutingId`, which `createPort<Message>()` uses when the
-endpoint does not explicitly provide a routing ID.
-
-### Milestone 6 — Subscription Lifetime
-
-Implement safe subscription ownership.
-
-Introduce:
-
-```cpp
-SubscriptionHandle
-```
-
-Ensure a destroyed model cannot leave behind a callback containing an invalid `this` pointer.
-
-`SubscriptionHandle` shall be move-only and use RAII ownership. Resetting or
-destroying the handle unregisters its callback. Unsubscription during an active
-dispatch shall also invalidate a callback already copied into that dispatch
-snapshot.
-
-Add tests covering model creation/destruction and unsubscribe behavior.
-
-### Milestone 7 — Concurrency
-
-Introduce multiple C++ threads.
-
-Example:
-
-```text
-Sensor Thread ─────┐
-Control Thread ────┼──> DispatchPort
-Network Thread ────┘
-```
-
-Make publishing thread-safe.
-
-The host coordinator shall issue model `operate()` requests concurrently and
-join them at an explicit barrier before routing. Delivery and dispatch may run
-concurrently across model workers, but message order within one worker and the
-frame dispatch boundary must remain deterministic. Dispatch queues,
-subscriptions, traffic counters, IPC transactions, and callback lifetime state
-shall be synchronized.
-
-Study and document:
-
-```text
-mutexes
-atomics
-critical sections
-race conditions
-deadlocks
-message ownership
-```
-
-### Milestone 8 — Bounded Messaging
-
-Introduce RTOS-oriented constraints:
-
-```text
-fixed queue depth
-maximum message size
-queue-full behavior
-drop policies
-memory pools
-static allocation
-```
-
-The framework should begin moving away from assumptions that unlimited heap allocation is available.
-
-`DispatchPort` shall accept an immutable `QueueConfiguration` defining queue
-depth, maximum payload size, and one of three full-queue policies: reject newest,
-drop newest, or drop oldest. Publishing shall return a `SendResult`, and queue
-statistics shall expose rejected, dropped, oversize, pending, and high-water
-counts.
-
-The incoming queue and dispatch batch shall reserve their complete capacity at
-construction. Pending payloads shall use aligned inline storage so normal
-publish and dispatch operations do not allocate payload objects.
-
-### Milestone 9 — FreeRTOS Adapter
-
-Implement the first real RTOS execution adapter.
-
-Models remain unchanged.
-
-Target architecture:
-
-```text
-FreeRTOS
-   │
-   ├── Task
-   │     └── ModelRunner
-   │            └── Model
-   │
-   └── Messaging Task
-          └── DispatchPort
-```
-
-Demonstrate the same example models operating under both:
-
-```text
-Host Simulator
-
-and
-
-FreeRTOS
-```
-
-The portable adapter shall create one periodic task per registered model and a
-separate messaging task. Model periods, priorities, and stack depths shall be
-explicit. Its model registry shall be fixed-size, and the native FreeRTOS kernel
-binding shall use statically allocated task control blocks and stacks through
-`xTaskCreateStatic()`.
-
-The native binding is optional at build time and shall link against an externally
-provided `freertos_kernel` target. Application model source shall contain no
-FreeRTOS APIs.
-
-### Milestone 10 — Parallel Processing Exercise
-
-Introduce models/tasks executing concurrently across available cores where supported.
-
-The host implementation shall allow the operating system to schedule separate
-model worker PIDs across available cores. The coordinator shall measure parallel
-frame phases rather than execute model IPC requests sequentially.
-
-Measure:
-
-```text
-execution time
-dispatch latency
-queue depth
-deadline misses
-jitter
-CPU utilization
-```
-
-Use the exercise to explore real-time behavior rather than simply maximizing throughput.
+# 9. Release Baseline
+
+Version 1.0.0 completes Milestones 1–10. Completed milestone requirements,
+acceptance evidence, compatibility limits, and validation commands are maintained
+in [`Release.md`](Release.md). This file remains the active architecture and
+product specification; completed work is not duplicated here.
 
 ---
 
@@ -1132,50 +823,15 @@ port.subscribe<Temperature>(
     callback);
 ```
 
-**Multiple Dispatch Ports**
+**Additional Transport Workers**
 
-Example:
+Extend the dedicated FreeRTOS messaging-task pattern to transport bridges that
+need isolated blocking I/O or device-driver execution contexts.
 
-```text
-controlPort
-telemetryPort
-diagnosticPort
-networkPort
-```
+**Embedded Cross-Core Messaging**
 
-Models explicitly connect to the ports relevant to their responsibilities. In
-the host simulator, each model worker owns its own IPC `DispatchPort`.
-
-The initial host implementation assigns a sequential number to every named model
-endpoint. Each endpoint declares its message type and publisher or subscriber
-direction. Port diagnostics report the connected publisher and subscriber port
-numbers, allowing the CLI `ports` command to display the live message topology.
-
-Host model arguments are loaded from `xml/models.xml`. Each entry controls model
-enablement, component DEBUG output, and whether the host launches an xterm GDB
-attachment for that model. Every enabled model runs in a separate child PID and
-owns a separate IPC dispatch port. Disabled models are not constructed,
-scheduled, or represented by message ports. Missing model control-status reports
-are presented as `STOPPED` by the host.
-
-**Dedicated Messaging Tasks**
-
-```text
-Publishers
-    │
-    ▼
-Concurrent Queue
-    │
-    ▼
-ROS Messaging Task
-    │
-    ▼
-Subscribers
-```
-
-**Cross-Core Messaging**
-
-Allow models executing on different processor cores to communicate through bounded queues.
+Add explicit affinity and inter-core transport support for embedded SMP targets;
+the host simulator already permits worker PIDs to execute on separate cores.
 
 **Static Memory Pools**
 
@@ -1195,19 +851,10 @@ deadline
 correlation ID
 ```
 
-**Performance Instrumentation**
+**Advanced Profiling**
 
-Measure:
-
-```text
-send → dispatch latency
-callback execution time
-messages/frame
-queue high-water mark
-dropped messages
-deadline violations
-dispatch duration
-```
+Add platform profiler integration, per-message drop timelines, percentile
+latencies, and exported machine-readable metrics beyond the 1.0.0 summary.
 
 **Watchdog Integration**
 
@@ -1278,4 +925,3 @@ Agents implementing this specification shall preserve the following principles u
 10. **The architecture should remain simple enough that its concurrency behavior can be understood, measured, and tested.**
 
 The purpose of this project is not merely to construct a messaging library. It is to provide a practical environment for learning and exercising **modern C++, RTOS architecture, threads, synchronization, scheduling, parallel processing, deterministic message passing, and scalable model-based software design**.
-
