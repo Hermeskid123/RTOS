@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iomanip>
 #include <ostream>
+#include <utility>
 
 namespace rtos::logging {
 namespace {
@@ -39,6 +40,21 @@ LogLevel Logger::level() const noexcept
     return minimumLevel_;
 }
 
+void Logger::setEnabled(const bool enabled) noexcept
+{
+    enabled_ = enabled;
+}
+
+bool Logger::enabled() const noexcept
+{
+    return enabled_;
+}
+
+void Logger::setComponentDebugEnabled(std::string component, const bool enabled)
+{
+    componentDebugEnabled_.insert_or_assign(std::move(component), enabled);
+}
+
 void Logger::log(
     const LogLevel level,
     const std::string_view component,
@@ -46,8 +62,17 @@ void Logger::log(
     const std::string_view message
 )
 {
-    if (level < minimumLevel_) {
+    if (!enabled_ || level < minimumLevel_) {
         return;
+    }
+    if (level == LogLevel::debug) {
+        const auto componentSetting = componentDebugEnabled_.find(std::string{component});
+        if (
+            componentSetting != componentDebugEnabled_.end()
+            && !componentSetting->second
+        ) {
+            return;
+        }
     }
 
     const auto now = std::chrono::system_clock::now();
