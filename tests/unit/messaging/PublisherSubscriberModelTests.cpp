@@ -30,13 +30,13 @@ private:
 class DummySubscriberModel {
 public:
     explicit DummySubscriberModel(rtos::messaging::DispatchPort& port)
+        : subscription_{port.subscribe<DummyMessage>(
+              [this](const DummyMessage& message)
+              {
+                  receivedValues_.push_back(message.value);
+              }
+          )}
     {
-        port.subscribe<DummyMessage>(
-            [this](const DummyMessage& message)
-            {
-                receivedValues_.push_back(message.value);
-            }
-        );
     }
 
     [[nodiscard]] const std::vector<int>& receivedValues() const
@@ -45,6 +45,7 @@ public:
     }
 
 private:
+    rtos::messaging::SubscriptionHandle subscription_;
     std::vector<int> receivedValues_;
 };
 

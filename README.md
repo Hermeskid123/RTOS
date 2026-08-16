@@ -6,6 +6,10 @@ the model lifecycle, status-reporting runner, frame-based host simulator, shared
 simulation clock, example models, and strongly typed deferred publish/subscribe
 routing.
 
+Subscriptions use move-only RAII handles. Destroying or resetting a
+`SubscriptionHandle` safely unregisters its callback, including callbacks that
+capture a model's `this` pointer.
+
 ## Requirements
 
 - CMake 3.20 or newer

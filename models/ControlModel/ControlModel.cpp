@@ -33,11 +33,10 @@ model::ControlStatus ControlModel::initialize()
     hasSensorData_ = false;
     targetRpm_ = 0;
 
-    if (!subscriptionRegistered_) {
-        sensorDataPort_.subscribe<messages::SensorData>(
+    if (!sensorDataSubscription_) {
+        sensorDataSubscription_ = sensorDataPort_.subscribe<messages::SensorData>(
             [this](const messages::SensorData& data) { onSensorData(data); }
         );
-        subscriptionRegistered_ = true;
     }
 
     logger_.log(logging::LogLevel::debug, "ControlModel", "INITIALIZE", "initialized");
@@ -75,6 +74,7 @@ model::ControlStatus ControlModel::operate()
 
 model::ControlStatus ControlModel::terminate()
 {
+    sensorDataSubscription_.reset();
     status_ = model::ControlStatus::terminated;
     hasSensorData_ = false;
     logger_.log(logging::LogLevel::debug, "ControlModel", "TERMINATE", "terminated");

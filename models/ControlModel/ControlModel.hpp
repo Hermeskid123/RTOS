@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rtos/messaging/DispatchPort.hpp"
+#include "rtos/messaging/SubscriptionHandle.hpp"
 #include "rtos/model/BaseModel.hpp"
 
 #include <cstdint>
@@ -37,7 +38,7 @@ private:
     logging::Logger& logger_;
     double latestSensorValue_{};
     std::int32_t targetRpm_{};
-    bool subscriptionRegistered_{};
+    messaging::SubscriptionHandle sensorDataSubscription_;
     bool hasSensorData_{};
     model::ControlStatus status_{model::ControlStatus::stopped};
 };

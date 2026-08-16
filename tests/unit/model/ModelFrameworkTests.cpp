@@ -14,6 +14,25 @@
 #include <type_traits>
 #include <vector>
 
+namespace {
+
+class ScopedSubscriberModel {
+public:
+    ScopedSubscriberModel(rtos::messaging::DispatchPort& port, int& callbackCount)
+        : callbackCount_{callbackCount},
+          subscription_{port.subscribe<rtos::messages::MotorStatus>(
+              [this](const rtos::messages::MotorStatus&) { ++callbackCount_; }
+          )}
+    {
+    }
+
+private:
+    int& callbackCount_;
+    rtos::messaging::SubscriptionHandle subscription_;
+};
+
+}  // namespace
+
 TEST_CASE("example models implement the base model lifecycle")
 {
     REQUIRE((std::is_base_of_v<rtos::model::BaseModel, rtos::models::SensorModel>));
@@ -31,12 +50,13 @@ TEST_CASE("example models exchange sensor command and motor status messages")
     rtos::models::MotorModel motor{port, logger};
     std::vector<std::int32_t> reportedRpms;
 
-    port.subscribe<rtos::messages::MotorStatus>(
+    const auto statusSubscription = port.subscribe<rtos::messages::MotorStatus>(
         [&reportedRpms](const rtos::messages::MotorStatus& status)
         {
             reportedRpms.push_back(status.currentRpm);
         }
     );
+    REQUIRE(statusSubscription.active());
 
     std::vector<rtos::model::BaseModel*> models{&sensor, &control, &motor};
     for (auto* model : models) {
@@ -120,4 +140,24 @@ TEST_CASE("model runner reports every lifecycle control status")
     REQUIRE(terminated[0].status == rtos::model::ControlStatus::terminated);
     REQUIRE(terminated[1].status == rtos::model::ControlStatus::terminated);
     REQUIRE(rtos::model::toString(terminated[0].status) == "TERMINATED");
+}
+
+TEST_CASE("destroying a model removes callbacks that capture this")
+{
+    rtos::messaging::DispatchPort port;
+    int callbackCount{};
+
+    {
+        ScopedSubscriberModel model{port, callbackCount};
+        REQUIRE(port.subscriberCount<rtos::messages::MotorStatus>() == 1);
+        port.send(rtos::messages::MotorStatus{900});
+        port.dispatchAll();
+        REQUIRE(callbackCount == 1);
+        port.send(rtos::messages::MotorStatus{1000});
+    }
+
+    REQUIRE(port.subscriberCount<rtos::messages::MotorStatus>() == 0);
+    const auto report = port.dispatchAll();
+    REQUIRE(callbackCount == 1);
+    REQUIRE(report.messagesWithoutSubscribers == 1);
 }

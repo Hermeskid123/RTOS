@@ -63,7 +63,9 @@ std::vector<MessageTraffic> DispatchPort::messageTraffic() const
     std::vector<MessageTraffic> traffic;
     traffic.reserve(traffic_.size());
     for (const auto& entry : traffic_) {
-        traffic.push_back(entry.second);
+        auto counters = entry.second;
+        counters.subscribers = subscriptions_.count(entry.first);
+        traffic.push_back(std::move(counters));
     }
 
     std::ranges::sort(

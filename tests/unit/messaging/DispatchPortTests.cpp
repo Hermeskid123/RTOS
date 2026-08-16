@@ -57,7 +57,7 @@ TEST_CASE("send defers callback execution until dispatch")
     rtos::messaging::DispatchPort port;
     bool callbackInvoked{};
 
-    port.subscribe<MotorCommand>(
+    const auto subscription = port.subscribe<MotorCommand>(
         [&callbackInvoked](const MotorCommand&) { callbackInvoked = true; }
     );
 
@@ -73,7 +73,7 @@ TEST_CASE("queued messages own a copy of publisher data")
     rtos::messaging::DispatchPort port;
     int receivedRpm{};
 
-    port.subscribe<MotorCommand>(
+    const auto subscription = port.subscribe<MotorCommand>(
         [&receivedRpm](const MotorCommand& command) { receivedRpm = command.targetRpm; }
     );
 
@@ -92,7 +92,7 @@ TEST_CASE("multiple queued messages retain publication order")
     rtos::messaging::DispatchPort port;
     std::vector<int> receivedValues;
 
-    port.subscribe<MotorCommand>(
+    const auto subscription = port.subscribe<MotorCommand>(
         [&receivedValues](const MotorCommand& command)
         {
             receivedValues.push_back(command.targetRpm);
@@ -112,7 +112,7 @@ TEST_CASE("messages sent from callbacks wait for the next dispatch cycle")
     rtos::messaging::DispatchPort port;
     int callbackCount{};
 
-    port.subscribe<MotorCommand>(
+    const auto subscription = port.subscribe<MotorCommand>(
         [&port, &callbackCount](const MotorCommand& command)
         {
             ++callbackCount;
@@ -135,7 +135,7 @@ TEST_CASE("nested dispatch cannot cross the active dispatch boundary")
     rtos::messaging::DispatchPort port;
     std::vector<int> receivedValues;
 
-    port.subscribe<MotorCommand>(
+    const auto subscription = port.subscribe<MotorCommand>(
         [&port, &receivedValues](const MotorCommand& command)
         {
             receivedValues.push_back(command.targetRpm);
@@ -160,10 +160,10 @@ TEST_CASE("all subscribers for a message type receive the message")
     int firstReceived{};
     int secondReceived{};
 
-    port.subscribe<MotorCommand>(
+    const auto firstSubscription = port.subscribe<MotorCommand>(
         [&firstReceived](const MotorCommand& command) { firstReceived = command.targetRpm; }
     );
-    port.subscribe<MotorCommand>(
+    const auto secondSubscription = port.subscribe<MotorCommand>(
         [&secondReceived](const MotorCommand& command) { secondReceived = command.targetRpm; }
     );
 
@@ -188,13 +188,13 @@ TEST_CASE("project messages follow the milestone routing matrix")
     LoggerModelProbe loggerModel;
     ControlModelProbe controlModel;
 
-    port.subscribe<MotorCommand>(
+    const auto motorSubscription = port.subscribe<MotorCommand>(
         [&motorModel](const MotorCommand& command) { motorModel.receive(command); }
     );
-    port.subscribe<MotorCommand>(
+    const auto loggerSubscription = port.subscribe<MotorCommand>(
         [&loggerModel](const MotorCommand& command) { loggerModel.receive(command); }
     );
-    port.subscribe<SensorData>(
+    const auto sensorSubscription = port.subscribe<SensorData>(
         [&controlModel](const SensorData& data) { controlModel.receive(data); }
     );
 
@@ -226,7 +226,7 @@ TEST_CASE("messages without subscribers are discarded safely")
     REQUIRE(unhandledReport.messagesWithoutSubscribers == 1);
     REQUIRE(unhandledReport.messagesProcessed() == 1);
 
-    port.subscribe<MotorStatus>(
+    const auto subscription = port.subscribe<MotorStatus>(
         [&receivedMessages](const MotorStatus&) { ++receivedMessages; }
     );
     port.dispatchAll();
@@ -258,7 +258,7 @@ TEST_CASE("a completed dispatch does not redeliver messages")
     rtos::messaging::DispatchPort port;
     int receivedMessages{};
 
-    port.subscribe<MotorCommand>(
+    const auto subscription = port.subscribe<MotorCommand>(
         [&receivedMessages](const MotorCommand&) { ++receivedMessages; }
     );
 
@@ -272,7 +272,7 @@ TEST_CASE("a completed dispatch does not redeliver messages")
 TEST_CASE("dispatch port reports its name queue and per-message traffic")
 {
     rtos::messaging::DispatchPort port{"diagnostic"};
-    port.subscribe<MotorCommand>([](const MotorCommand&) {});
+    const auto subscription = port.subscribe<MotorCommand>([](const MotorCommand&) {});
 
     port.send(MotorCommand{1800});
     port.send(MotorStatus{1700});
@@ -311,7 +311,7 @@ TEST_CASE("named ports receive numbers and report publisher subscriber topology"
     );
     int receivedRpm{};
 
-    subscriber.subscribe<MotorCommand>(
+    const auto subscription = subscriber.subscribe<MotorCommand>(
         [&receivedRpm](const MotorCommand& command) { receivedRpm = command.targetRpm; }
     );
     publisher.send(MotorCommand{2200});
@@ -361,7 +361,7 @@ TEST_CASE("IPC dispatch ports route using message defaults and explicit override
         "command.in", rtos::messaging::PortDirection::subscriber
     );
     int receivedRpm{};
-    input.subscribe<MotorCommand>(
+    const auto subscription = input.subscribe<MotorCommand>(
         [&receivedRpm](const MotorCommand& command) { receivedRpm = command.targetRpm; }
     );
 
@@ -377,4 +377,64 @@ TEST_CASE("IPC dispatch ports route using message defaults and explicit override
     );
     alternate.send(MotorStatus{2100});
     REQUIRE(transport.messages.back().routingId == 9000);
+}
+
+TEST_CASE("resetting a subscription handle prevents queued message delivery")
+{
+    rtos::messaging::DispatchPort port;
+    int callbackCount{};
+    auto subscription = port.subscribe<MotorCommand>(
+        [&callbackCount](const MotorCommand&) { ++callbackCount; }
+    );
+
+    port.send(MotorCommand{1200});
+    REQUIRE(subscription.active());
+    subscription.reset();
+    const auto report = port.dispatchAll();
+
+    REQUIRE(!subscription.active());
+    REQUIRE(port.subscriberCount<MotorCommand>() == 0);
+    REQUIRE(callbackCount == 0);
+    REQUIRE(report.messagesWithoutSubscribers == 1);
+}
+
+TEST_CASE("unsubscribe during dispatch invalidates a callback already in the snapshot")
+{
+    rtos::messaging::DispatchPort port;
+    rtos::messaging::SubscriptionHandle secondSubscription;
+    int firstCallbackCount{};
+    int secondCallbackCount{};
+    const auto firstSubscription = port.subscribe<MotorCommand>(
+        [&](const MotorCommand&)
+        {
+            ++firstCallbackCount;
+            secondSubscription.reset();
+        }
+    );
+    secondSubscription = port.subscribe<MotorCommand>(
+        [&secondCallbackCount](const MotorCommand&) { ++secondCallbackCount; }
+    );
+
+    port.send(MotorCommand{1300});
+    const auto report = port.dispatchAll();
+
+    REQUIRE(firstSubscription.active());
+    REQUIRE(firstCallbackCount == 1);
+    REQUIRE(secondCallbackCount == 0);
+    REQUIRE(report.callbacksInvoked == 1);
+    REQUIRE(port.subscriberCount<MotorCommand>() == 1);
+}
+
+TEST_CASE("moving a subscription handle transfers unsubscribe ownership")
+{
+    rtos::messaging::DispatchPort port;
+    auto original = port.subscribe<MotorCommand>([](const MotorCommand&) {});
+    auto owner = std::move(original);
+
+    REQUIRE(!original.active());
+    REQUIRE(owner.active());
+    REQUIRE(port.subscriberCount<MotorCommand>() == 1);
+
+    owner.reset();
+    REQUIRE(port.subscriberCount<MotorCommand>() == 0);
 }

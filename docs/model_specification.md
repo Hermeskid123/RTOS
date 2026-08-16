@@ -29,3 +29,8 @@ counter and monotonic simulation clock mirrored into the model worker by the hos
 coordinator. The host simulation core is the only authoritative owner allowed to
 advance frames or control time, keeping all process-local model views consistent
 at each dispatch boundary.
+
+Models that subscribe with a callback capturing `this` retain the returned
+move-only `SubscriptionHandle` as a member. Termination may reset it explicitly;
+normal model destruction also unregisters it automatically, preventing the
+dispatch registry from retaining a callback to a destroyed model.

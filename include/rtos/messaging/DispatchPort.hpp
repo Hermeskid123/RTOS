@@ -28,9 +28,11 @@ public:
     class Port {
     public:
         template<typename Message, typename Callback>
-        void subscribe(Callback&& callback)
+        [[nodiscard]] SubscriptionHandle subscribe(Callback&& callback)
         {
-            owner_->subscribeFrom<Message>(number_, std::forward<Callback>(callback));
+            return owner_->subscribeFrom<Message>(
+                number_, std::forward<Callback>(callback)
+            );
         }
 
         template<typename Message>
@@ -72,13 +74,16 @@ public:
     ~DispatchPort() = default;
 
     template<typename Message, typename Callback>
-    void subscribe(Callback&& callback)
+    [[nodiscard]] SubscriptionHandle subscribe(Callback&& callback)
     {
         using SubscribedMessage = std::remove_cvref_t<Message>;
-        subscriptions_.add<SubscribedMessage>(std::forward<Callback>(callback));
+        auto handle = subscriptions_.add<SubscribedMessage>(
+            std::forward<Callback>(callback)
+        );
         auto& traffic = traffic_[typeid(SubscribedMessage)];
         traffic.messageName = messageName<SubscribedMessage>();
         traffic.subscribers = subscriptions_.count<SubscribedMessage>();
+        return handle;
     }
 
     template<typename Message>
@@ -210,10 +215,13 @@ private:
     }
 
     template<typename Message, typename Callback>
-    void subscribeFrom(const std::size_t number, Callback&& callback)
+    [[nodiscard]] SubscriptionHandle subscribeFrom(
+        const std::size_t number,
+        Callback&& callback
+    )
     {
         validatePort<Message>(number, PortDirection::subscriber);
-        subscribe<Message>(std::forward<Callback>(callback));
+        return subscribe<Message>(std::forward<Callback>(callback));
     }
 
     template<typename Message>

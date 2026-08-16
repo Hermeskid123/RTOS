@@ -27,11 +27,10 @@ model::ControlStatus MotorModel::initialize()
     currentRpm_ = 0;
     targetRpm_ = 0;
 
-    if (!subscriptionRegistered_) {
-        motorCommandPort_.subscribe<messages::MotorCommand>(
+    if (!motorCommandSubscription_) {
+        motorCommandSubscription_ = motorCommandPort_.subscribe<messages::MotorCommand>(
             [this](const messages::MotorCommand& command) { onMotorCommand(command); }
         );
-        subscriptionRegistered_ = true;
     }
 
     logger_.log(logging::LogLevel::debug, "MotorModel", "INITIALIZE", "initialized");
@@ -71,6 +70,7 @@ model::ControlStatus MotorModel::operate()
 
 model::ControlStatus MotorModel::terminate()
 {
+    motorCommandSubscription_.reset();
     status_ = model::ControlStatus::terminated;
     currentRpm_ = 0;
     targetRpm_ = 0;

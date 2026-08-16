@@ -1,12 +1,13 @@
 #pragma once
 
+#include "rtos/messaging/SubscriptionHandle.hpp"
+
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <type_traits>
 #include <typeindex>
-#include <unordered_map>
 #include <utility>
-#include <vector>
 
 namespace rtos::messaging {
 
@@ -14,8 +15,12 @@ class DispatchPort;
 
 class SubscriptionRegistry {
 public:
+    SubscriptionRegistry();
+    SubscriptionRegistry(const SubscriptionRegistry&) = delete;
+    SubscriptionRegistry& operator=(const SubscriptionRegistry&) = delete;
+
     template<typename Message, typename Callback>
-    void add(Callback&& callback)
+    [[nodiscard]] SubscriptionHandle add(Callback&& callback)
     {
         using SubscribedMessage = std::remove_cvref_t<Message>;
 
@@ -27,29 +32,39 @@ public:
         std::function<void(const SubscribedMessage&)> typedCallback{
             std::forward<Callback>(callback)
         };
-        subscribers_[typeid(SubscribedMessage)].emplace_back(
-            [callback = std::move(typedCallback)](const void* payload)
-            {
-                callback(*static_cast<const SubscribedMessage*>(payload));
+        const auto type = std::type_index{typeid(SubscribedMessage)};
+        const auto id = state_->nextId++;
+        state_->subscribers[type].push_back(std::make_shared<detail::SubscriptionSlot>(
+            detail::SubscriptionSlot{
+                id,
+                true,
+                [callback = std::move(typedCallback)](const void* payload)
+                {
+                    callback(*static_cast<const SubscribedMessage*>(payload));
+                },
             }
-        );
+        ));
+        return SubscriptionHandle{state_, type, id};
     }
 
     template<typename Message>
     [[nodiscard]] std::size_t count() const
     {
-        const auto subscribers = subscribers_.find(typeid(std::remove_cvref_t<Message>));
-        return subscribers == subscribers_.end() ? 0 : subscribers->second.size();
+        const auto subscribers = state_->subscribers.find(
+            typeid(std::remove_cvref_t<Message>)
+        );
+        return subscribers == state_->subscribers.end()
+            ? 0
+            : subscribers->second.size();
     }
 
 private:
     friend class DispatchPort;
 
-    using Subscriber = std::function<void(const void*)>;
-
     [[nodiscard]] std::size_t dispatch(std::type_index type, const void* payload) const;
+    [[nodiscard]] std::size_t count(std::type_index type) const;
 
-    std::unordered_map<std::type_index, std::vector<Subscriber>> subscribers_;
+    std::shared_ptr<detail::SubscriptionState> state_;
 };
 
 }  // namespace rtos::messaging

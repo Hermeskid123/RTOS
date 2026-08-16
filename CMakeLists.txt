@@ -16,6 +16,7 @@ add_library(rtos_framework
     models/SensorModel/SensorModel.cpp
     src/logging/Logger.cpp
     src/messaging/DispatchPort.cpp
+    src/messaging/SubscriptionHandle.cpp
     src/messaging/SubscriptionRegistry.cpp
     src/model/ModelRunner.cpp
     src/model/ModelConfiguration.cpp

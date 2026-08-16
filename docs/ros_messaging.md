@@ -9,7 +9,7 @@ through `rtos::messaging::DispatchPort`.
 
 rtos::messaging::DispatchPort port;
 
-port.subscribe<rtos::messages::MotorCommand>(
+auto subscription = port.subscribe<rtos::messages::MotorCommand>(
     [](const rtos::messages::MotorCommand& command)
     {
         // Process the command during dispatch.
@@ -46,8 +46,18 @@ const auto motorSubscribers =
     port.subscriberCount<rtos::messages::MotorCommand>();
 ```
 
-Subscription removal is intentionally deferred to the subscription-lifetime
-milestone.
+## Subscription Lifetime
+
+`subscribe<Message>()` returns a move-only `SubscriptionHandle`. Retain the
+handle for as long as delivery is desired. Calling `reset()` or destroying the
+handle unregisters the callback. Handles use weak registry ownership, so
+destroying a handle after its dispatch port is also safe.
+
+Models store handles as members whenever callbacks capture `this`. Member
+destruction invalidates the subscription before later dispatch can invoke a
+callback against the destroyed model. Resetting a handle during dispatch also
+marks its shared callback slot inactive, even if the slot is already present in
+the current dispatch snapshot.
 
 ## Dispatch Reports
 
@@ -66,8 +76,8 @@ Callers may ignore the report when routing diagnostics are not needed.
 - `rtos::messages::MotorStatus` reports the current motor RPM.
 - `rtos::messages::SensorData` carries a host-simulation sensor value.
 
-The current implementation is single-threaded and uses dynamic allocation for
-each process and uses dynamic allocation for host development. The host simulator
+The current implementation is single-threaded within each process and uses
+dynamic allocation for host development. The host simulator
 runs models in separate processes and connects their dispatch ports through an
 IPC transport. Subscription lifetime and bounded embedded storage are planned
 for later milestones. ROS Messaging is an internal name and does not imply

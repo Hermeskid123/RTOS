@@ -973,6 +973,11 @@ SubscriptionHandle
 
 Ensure a destroyed model cannot leave behind a callback containing an invalid `this` pointer.
 
+`SubscriptionHandle` shall be move-only and use RAII ownership. Resetting or
+destroying the handle unregisters its callback. Unsubscription during an active
+dispatch shall also invalidate a callback already copied into that dispatch
+snapshot.
+
 Add tests covering model creation/destruction and unsubscribe behavior.
 
 ### Milestone 7 — Concurrency
