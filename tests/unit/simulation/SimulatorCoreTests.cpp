@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Defines SimulatorCoreTests coverage for the RTOS framework test suite.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #include "TestFramework.hpp"

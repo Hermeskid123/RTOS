@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Declares the public DispatchPort framework API.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #pragma once
@@ -32,10 +33,18 @@
 
 namespace rtos::messaging {
 
+/**
+ * @brief Deferred, bounded, strongly typed publish/subscribe router.
+ * @details Send operations copy trivially-copyable payloads into local inline
+ * storage or an external transport. dispatchAll() captures one batch, ensuring
+ * callback publications remain deferred to a later dispatch boundary.
+ */
 class DispatchPort {
 public:
+    /** @brief Typed named endpoint created and owned logically by a model. */
     class Port {
     public:
+        /** @brief Registers a callback through a subscriber endpoint. */
         template<typename Message, typename Callback>
         [[nodiscard]] SubscriptionHandle subscribe(Callback&& callback)
         {
@@ -44,12 +53,14 @@ public:
             );
         }
 
+        /** @brief Publishes a copied lvalue through a publisher endpoint. */
         template<typename Message>
         SendResult send(const Message& message)
         {
             return owner_->sendFrom(number_, message);
         }
 
+        /** @brief Publishes an rvalue through a publisher endpoint. */
         template<typename Message>
             requires(!std::is_lvalue_reference_v<Message>)
         SendResult send(Message&& message)
@@ -57,6 +68,7 @@ public:
             return owner_->sendFrom(number_, std::forward<Message>(message));
         }
 
+        /** @brief Returns the endpoint number unique within its owner. */
         [[nodiscard]] std::size_t number() const noexcept { return number_; }
 
     private:
@@ -71,12 +83,21 @@ public:
         std::size_t number_;
     };
 
+    /**
+     * @brief Creates a dispatch boundary and preallocates its message queues.
+     * @param name Diagnostic port name.
+     * @param transportType Local or inter-process transport classification.
+     * @param transport Optional non-owning external transport sink.
+     * @param queueConfiguration Immutable queue bounds and overflow policy.
+     * @throws std::invalid_argument If queue bounds are invalid.
+     */
     explicit DispatchPort(
         std::string name = "main",
         TransportType transportType = TransportType::inProcess,
         MessageTransport* transport = nullptr,
         QueueConfiguration queueConfiguration = {}
     );
+    /** @brief Convenience constructor for a bounded in-process port. */
     DispatchPort(std::string name, QueueConfiguration queueConfiguration);
     DispatchPort(const DispatchPort&) = delete;
     DispatchPort& operator=(const DispatchPort&) = delete;
@@ -84,6 +105,7 @@ public:
     DispatchPort& operator=(DispatchPort&&) = delete;
     ~DispatchPort() = default;
 
+    /** @brief Registers an unnamed exact-type subscriber callback. */
     template<typename Message, typename Callback>
     [[nodiscard]] SubscriptionHandle subscribe(Callback&& callback)
     {
@@ -98,6 +120,10 @@ public:
         return handle;
     }
 
+    /**
+     * @brief Creates a named typed endpoint for diagnostics and route validation.
+     * @return Lightweight endpoint bound to this dispatch port.
+     */
     template<typename Message>
     [[nodiscard]] Port createPort(
         std::string name,
@@ -130,6 +156,7 @@ public:
         return Port{*this, number};
     }
 
+    /** @brief Publishes a copied message using its default route. */
     template<typename Message>
     SendResult send(const Message& message)
     {
@@ -138,6 +165,7 @@ public:
         );
     }
 
+    /** @brief Publishes an rvalue message using its default route. */
     template<typename Message>
         requires(!std::is_lvalue_reference_v<Message>)
     SendResult send(Message&& message)
@@ -147,20 +175,33 @@ public:
         );
     }
 
+    /** @brief Returns active subscribers registered for an exact type. */
     template<typename Message>
     [[nodiscard]] std::size_t subscriberCount() const
     {
         return subscriptions_.count<Message>();
     }
 
+    /** @brief Routes the current queue batch and returns routing measurements. */
     DispatchReport dispatchAll();
+    /** @brief Returns the diagnostic name supplied at construction. */
     [[nodiscard]] std::string_view name() const noexcept;
+    /** @brief Returns messages waiting for a future dispatch boundary. */
     [[nodiscard]] std::size_t pendingMessageCount() const noexcept;
+    /** @brief Returns immutable queue configuration. */
     [[nodiscard]] QueueConfiguration queueConfiguration() const noexcept;
+    /** @brief Returns a synchronized queue statistics snapshot. */
     [[nodiscard]] QueueStatistics queueStatistics() const noexcept;
+    /** @brief Returns cumulative counters sorted for diagnostics. */
     [[nodiscard]] std::vector<MessageTraffic> messageTraffic() const;
+    /** @brief Returns named endpoint relationships and routing metadata. */
     [[nodiscard]] std::vector<PortTopology> portTopology() const;
+    /** @brief Returns this port's transport classification. */
     [[nodiscard]] TransportType transportType() const noexcept;
+    /**
+     * @brief Accepts a serialized transport envelope into the local queue.
+     * @return `true` when the payload was recognized and queued.
+     */
     [[nodiscard]] bool receive(const TransportMessage& message);
 
 private:

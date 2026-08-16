@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Declares the public FrameCounter framework API.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #pragma once
@@ -12,8 +13,10 @@ namespace rtos::simulation {
 
 class SimulatorCore;
 
+/** @brief Atomic read-only frame view exposed to application models. */
 class FrameCounter final {
 public:
+    /** @brief Unsigned frame sequence type. */
     using value_type = std::uint64_t;
 
     FrameCounter(const FrameCounter&) = delete;
@@ -21,6 +24,7 @@ public:
     FrameCounter(FrameCounter&&) = delete;
     FrameCounter& operator=(FrameCounter&&) = delete;
 
+    /** @brief Returns the current authoritative frame number. */
     [[nodiscard]] value_type current() const noexcept
     {
         return current_.load(std::memory_order_relaxed);

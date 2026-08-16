@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Implements model worker processes and IPC serialization.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #include "apps/rtos_sim/ModelProcess.hpp"

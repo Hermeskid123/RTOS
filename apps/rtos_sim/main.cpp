@@ -1,6 +1,7 @@
 /**
  * @file
  * @brief Implements the interactive and fixed-frame host simulator.
+ * @details Included in the complete release 1.0.0 Doxygen reference.
  */
 
 #include "apps/rtos_sim/ModelProcess.hpp"
